@@ -1,0 +1,633 @@
+'use client';
+
+import {
+  BarcodeOutlined,
+  CalendarOutlined,
+  CheckCircleFilled,
+  CloseCircleFilled,
+  CloseOutlined,
+  ExclamationCircleFilled,
+  EyeOutlined,
+  HistoryOutlined,
+  PlusCircleOutlined,
+  PrinterOutlined,
+  QuestionCircleFilled,
+  RedoOutlined,
+  ScanOutlined,
+  SwapOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
+import {
+  App,
+  AutoComplete,
+  Badge,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Empty,
+  Flex,
+  Row,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+  type RefSelectProps,
+} from 'antd';
+import type { Dayjs } from 'dayjs';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import DisposeModal from '@/components/DisposeModal';
+import RegisterUnitModal from '@/components/RegisterUnitModal';
+import ReprintModal from '@/components/ReprintModal';
+import Sticker from '@/components/Sticker';
+import { CycleBar, StatusTag } from '@/components/UnitBits';
+import UnitHistory from '@/components/UnitHistory';
+import { beep } from '@/lib/beep';
+import { dayjs, ISO_DATE, THAI_DATE, thaiDate } from '@/lib/date';
+import { usePrintStickers } from '@/lib/print';
+import { useStore, type UnitInfo } from '@/lib/store';
+import type { PrintLog, StickerData, Unit } from '@/lib/types';
+import { normSn } from '@/lib/units';
+
+const { Text } = Typography;
+const AUTO_KEY = 'station_autoPrint';
+
+type RowState = 'ok' | 'notfound' | 'last' | 'disposed' | 'notype';
+
+interface QueueRow {
+  key: number;
+  sn: string;
+}
+
+interface Resolved extends QueueRow {
+  state: RowState;
+  info?: UnitInfo;
+  round?: number;
+  exp?: string;
+}
+
+export default function PrintPage() {
+  return (
+    <Suspense>
+      <SterilizeStation />
+    </Suspense>
+  );
+}
+
+function SterilizeStation() {
+  const { units, findUnitBySn, getUnitInfo, sterilize, updateItem } = useStore();
+  const printStickers = usePrintStickers();
+  const { message } = App.useApp();
+  const params = useSearchParams();
+  const scanRef = useRef<RefSelectProps>(null);
+  const keySeq = useRef(0);
+
+  const [scan, setScan] = useState('');
+  const [queue, setQueue] = useState<QueueRow[]>([]);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [mfg, setMfg] = useState<Dayjs>(() => dayjs());
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [recent, setRecent] = useState<PrintLog[]>([]);
+  const [register, setRegister] = useState<{ sn?: string; replaces?: Unit; rowKey?: number } | null>(null);
+  const [dispose, setDispose] = useState<{ unit: Unit; rowKey?: number } | null>(null);
+  const [reprintOpen, setReprintOpen] = useState(false);
+
+  const focusScan = useCallback(() => setTimeout(() => scanRef.current?.focus(), 60), []);
+
+  // จำค่า "ยิงแล้วพิมพ์ทันที" ไว้ในเครื่อง
+  useEffect(() => {
+    try {
+      setAutoPrint(localStorage.getItem(AUTO_KEY) === '1');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const toggleAuto = (v: boolean) => {
+    setAutoPrint(v);
+    try {
+      localStorage.setItem(AUTO_KEY, v ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+    focusScan();
+  };
+
+  // ===== ค้นหา + แนะนำ (กรณีสติ๊กเกอร์ลอก/ยิงไม่ติด พิมพ์บางส่วนของ SN หรือชื่ออุปกรณ์ได้) =====
+  const justSelected = useRef(false);
+  const suggestions = useMemo(() => {
+    const q = scan.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const statusOrder = { new: 0, active: 0, last: 1, disposed: 2 } as const;
+    return units
+      .map((u) => {
+        const sn = u.sn.toLowerCase();
+        const info = getUnitInfo(u);
+        const name = (info.item?.name ?? '').toLowerCase();
+        const rank = sn === q ? 0 : sn.startsWith(q) ? 1 : sn.includes(q) ? 2 : name.includes(q) ? 3 : -1;
+        return { info, rank };
+      })
+      .filter((x) => x.rank >= 0)
+      .sort((a, b) => statusOrder[a.info.status] - statusOrder[b.info.status] || a.rank - b.rank || a.info.unit.sn.localeCompare(b.info.unit.sn))
+      .slice(0, 8)
+      .map(({ info }) => ({
+        value: info.unit.sn,
+        label: (
+          <Flex justify="space-between" align="center" gap={8} style={{ opacity: info.status === 'disposed' ? 0.5 : 1 }}>
+            <Space size={8} style={{ minWidth: 0 }}>
+              <Text code>{info.unit.sn}</Text>
+              <Text ellipsis style={{ maxWidth: 220 }}>
+                {info.item?.name}
+              </Text>
+            </Space>
+            <Space size={8}>
+              <CycleBar used={info.used} max={info.unit.maxRound} width={70} />
+              <StatusTag status={info.status} />
+            </Space>
+          </Flex>
+        ),
+      }));
+  }, [scan, units, getUnitInfo]);
+
+  const onScanEnter = (value: string) => {
+    // รอให้ AutoComplete ตัดสินก่อนว่าผู้ใช้เลือกรายการแนะนำ (ลูกศร + Enter) หรือยิงบาร์โคดตรง ๆ
+    setTimeout(() => {
+      if (justSelected.current) justSelected.current = false;
+      else addScan(value);
+    }, 0);
+  };
+
+  /** ตรวจสถานะของ SN ณ ตอนนี้ (คำนวณใหม่ทุกครั้งที่ข้อมูลเปลี่ยน) */
+  const resolve = useCallback(
+    (row: QueueRow): Resolved => {
+      const unit = findUnitBySn(row.sn);
+      if (!unit) return { ...row, state: 'notfound' };
+      const info = getUnitInfo(unit);
+      if (info.status === 'disposed') return { ...row, state: 'disposed', info };
+      if (info.status === 'last') return { ...row, state: 'last', info };
+      if (!info.item) return { ...row, state: 'notype', info };
+      return {
+        ...row,
+        state: 'ok',
+        info,
+        round: info.nextRound!,
+        exp: mfg.add(info.item.shelf, 'day').format(ISO_DATE),
+      };
+    },
+    [findUnitBySn, getUnitInfo, mfg],
+  );
+
+  const rows = useMemo(() => queue.map(resolve), [queue, resolve]);
+  const ready = rows.filter((r) => r.state === 'ok');
+  const problems = rows.length - ready.length;
+
+  const doSterilize = (list: Resolved[]) => {
+    const mfgIso = mfg.format(ISO_DATE);
+    const logs: PrintLog[] = [];
+    for (const r of list) {
+      if (!r.info || !r.exp) continue;
+      const res = sterilize(r.info.unit.id, mfgIso, r.exp);
+      if (res.ok) logs.push(res.value);
+      else message.error(`${r.sn}: ${res.error}`);
+    }
+    if (logs.length) {
+      printStickers(logs);
+      setRecent((prev) => [...logs.slice().reverse(), ...prev].slice(0, 30));
+    }
+    return logs;
+  };
+
+  const addScan = (raw: string) => {
+    const sn = raw.trim();
+    setScan('');
+    if (!sn) return;
+    const dup = queue.find((q) => normSn(q.sn) === normSn(sn));
+    if (dup) {
+      beep('error');
+      message.warning(`${sn} อยู่ในรายการแล้ว`);
+      setSelected(dup.key);
+      return;
+    }
+    const row: QueueRow = { key: ++keySeq.current, sn };
+    const r = resolve(row);
+    if (r.state === 'ok' && autoPrint) {
+      const logs = doSterilize([r]);
+      if (logs.length) {
+        beep('ok');
+        message.success(`${sn} — พิมพ์รอบ ${logs[0].round}/${logs[0].maxRound} แล้ว`);
+      }
+      setSelected(null);
+      return;
+    }
+    beep(r.state === 'ok' ? 'ok' : 'error');
+    setQueue((q) => [...q, row]);
+    setSelected(row.key);
+  };
+
+  // เปิดจากหน้าอื่นด้วย ?sn=XXX
+  const fromParam = useRef(false);
+  useEffect(() => {
+    const sn = params.get('sn');
+    if (sn && !fromParam.current) {
+      fromParam.current = true;
+      const row = { key: ++keySeq.current, sn };
+      setQueue([row]);
+      setSelected(row.key);
+    }
+  }, [params]);
+
+  const printAll = () => {
+    if (!ready.length) return;
+    const logs = doSterilize(ready);
+    const done = new Set(ready.map((r) => r.key));
+    setQueue((q) => q.filter((x) => !done.has(x.key)));
+    setSelected(null);
+    message.success(`ส่งพิมพ์ ${logs.length} ดวงแล้ว`);
+    focusScan();
+  };
+
+  const removeRow = (key: number) => {
+    setQueue((q) => q.filter((x) => x.key !== key));
+    if (selected === key) setSelected(null);
+    focusScan();
+  };
+
+  /** แทน SN ในแถวด้วยชิ้นที่เพิ่งลงทะเบียน (กรณีทดแทน / ระบบสร้าง SN ให้) */
+  const replaceRowSn = (rowKey: number | undefined, units: Unit[]) => {
+    if (rowKey == null || units.length !== 1) return;
+    setQueue((q) => q.map((x) => (x.key === rowKey ? { ...x, sn: units[0].sn } : x)));
+  };
+
+  // แถวที่เลือก (หรือแถวล่าสุด) ใช้แสดงตัวอย่างและประวัติ
+  const focusRow = rows.find((r) => r.key === selected) ?? rows[rows.length - 1];
+  const focusUnit = focusRow?.info?.unit;
+  const focusItem = focusRow?.info?.item;
+  // เปิด/ปิดบาร์โคดบนสติ๊กเกอร์ของประเภทนี้ (บันทึกเป็นค่าของประเภทอุปกรณ์)
+  const toggleBarcode = (on: boolean) => {
+    if (!focusItem) return;
+    const { id, ...rest } = focusItem;
+    updateItem(id, { ...rest, useBarcode: on });
+    message.success(`${focusItem.name}: ${on ? 'พิมพ์บาร์โคด' : 'ไม่พิมพ์บาร์โคด (แสดง SN เป็นตัวหนังสือ)'}`);
+    focusScan();
+  };
+  const preview: StickerData | null = useMemo(() => {
+    if (focusRow?.state === 'ok' && focusRow.info?.item) {
+      const it = focusRow.info.item;
+      return {
+        name: it.name,
+        useBarcode: it.useBarcode,
+        barcode: focusRow.info.unit.sn,
+        mfg: mfg.format(ISO_DATE),
+        exp: focusRow.exp!,
+        round: focusRow.round!,
+        maxRound: focusRow.info.unit.maxRound,
+      };
+    }
+    // ไม่มีรายการที่เลือก (เช่น เพิ่งพิมพ์เสร็จ) → ล้างตัวอย่าง
+    const l = focusRow?.info?.lastLog;
+    return l ? { name: l.name, useBarcode: l.useBarcode, barcode: l.barcode, mfg: l.mfg, exp: l.exp, round: l.round, maxRound: l.maxRound } : null;
+  }, [focusRow, mfg]);
+
+  return (
+    <>
+      <Row gutter={[20, 20]}>
+        <Col xs={24} xl={14}>
+          <Flex vertical gap={20}>
+            {/* ===== ช่องยิง ===== */}
+            <Card styles={{ body: { padding: 20 } }}>
+              <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 12 }}>
+                <Space>
+                  <ScanOutlined style={{ color: '#2563eb', fontSize: 18 }} />
+                  <Text strong style={{ fontSize: 16 }}>
+                    ยิงบาร์โคด SN ของอุปกรณ์ที่ sterilize เสร็จ
+                  </Text>
+                </Space>
+                <Space wrap>
+                  <Button icon={<RedoOutlined />} onClick={() => setReprintOpen(true)}>
+                    พิมพ์ซ้ำ
+                  </Button>
+                  <Button icon={<PlusCircleOutlined />} onClick={() => setRegister({})}>
+                    ลงทะเบียนชิ้นใหม่
+                  </Button>
+                </Space>
+              </Flex>
+              <AutoComplete
+                ref={scanRef}
+                autoFocus
+                size="large"
+                value={scan}
+                options={suggestions}
+                onChange={(v: string) => setScan(v ?? '')}
+                onSelect={(v: string) => {
+                  // กัน Enter เดียวกันไม่ให้เพิ่มซ้ำ แล้วล้างธงในจังหวะถัดไป (กรณีคลิกเลือกด้วยเมาส์)
+                  justSelected.current = true;
+                  setTimeout(() => (justSelected.current = false), 50);
+                  addScan(v);
+                  focusScan();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onScanEnter((e.target as HTMLInputElement).value);
+                }}
+                defaultActiveFirstOption={false}
+                prefix={<BarcodeOutlined style={{ color: '#94a3b8', fontSize: 20 }} />}
+                placeholder="ยิงบาร์โคด หรือพิมพ์ SN / ชื่ออุปกรณ์เพื่อค้นหา…"
+                style={{ width: '100%', height: 56 }}
+                styles={{
+                  input: { fontSize: 20, fontFamily: 'ui-monospace, monospace' },
+                  placeholder: { fontSize: 18 },
+                }}
+              />
+              <Flex justify="space-between" align="center" wrap gap={12} style={{ marginTop: 12 }}>
+                <Space size={8}>
+                  <Switch checked={autoPrint} onChange={toggleAuto} />
+                  <Text>
+                    <ThunderboltOutlined style={{ color: '#f59e0b' }} /> ยิงแล้วพิมพ์ทันที
+                  </Text>
+                  <Tooltip title="เปิด: ยิง 1 ครั้ง = พิมพ์ 1 ดวงทันที · ปิด: ยิงสะสมไว้ในรายการ แล้วกดพิมพ์ทีเดียว">
+                    <QuestionCircleFilled style={{ color: '#cbd5e1' }} />
+                  </Tooltip>
+                </Space>
+                <Space size={8}>
+                  <Text type="secondary">วันที่ sterilize</Text>
+                  <DatePicker
+                    value={mfg}
+                    onChange={(d) => d && setMfg(d)}
+                    format={THAI_DATE}
+                    allowClear={false}
+                    suffixIcon={<CalendarOutlined />}
+                    style={{ width: 150 }}
+                  />
+                </Space>
+              </Flex>
+            </Card>
+
+            {/* ===== รายการรอพิมพ์ ===== */}
+            <Card
+              title={
+                <Space>
+                  รายการรอพิมพ์
+                  <Badge count={ready.length} showZero color="#2563eb" />
+                  {problems > 0 && <Badge count={`มีปัญหา ${problems}`} color="#ef4444" />}
+                </Space>
+              }
+              extra={
+                rows.length > 0 && (
+                  <Button type="text" onClick={() => (setQueue([]), setSelected(null), focusScan())}>
+                    ล้างรายการ
+                  </Button>
+                )
+              }
+              styles={{ body: { padding: rows.length ? 0 : undefined } }}
+            >
+              {rows.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    autoPrint ? 'โหมดพิมพ์ทันที: ยิงแล้วพิมพ์เลย รายการที่มีปัญหาจะมาค้างที่นี่' : 'ยิง SN ได้เลย แล้วกดพิมพ์ทั้งหมดทีเดียว'
+                  }
+                />
+              ) : (
+                <div>
+                  {rows.map((r) => (
+                    <QueueItem
+                      key={r.key}
+                      row={r}
+                      selected={focusRow?.key === r.key}
+                      onSelect={() => setSelected(r.key)}
+                      onRemove={() => removeRow(r.key)}
+                      onRegister={() => setRegister({ sn: r.sn, rowKey: r.key })}
+                      onDispose={() => r.info && setDispose({ unit: r.info.unit, rowKey: r.key })}
+                      onReplace={() => r.info && setRegister({ replaces: r.info.unit, rowKey: r.key })}
+                    />
+                  ))}
+                </div>
+              )}
+              {rows.length > 0 && (
+                <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+                  <Button
+                    type="primary"
+                    size="large"
+                    block
+                    icon={<PrinterOutlined />}
+                    disabled={!ready.length}
+                    onClick={printAll}
+                    style={{ height: 56, fontSize: 18 }}
+                  >
+                    พิมพ์ทั้งหมด {ready.length} ดวง
+                  </Button>
+                  {problems > 0 && (
+                    <Text type="secondary" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
+                      รายการที่มีปัญหาจะไม่ถูกพิมพ์ — แก้ไขหรือกด ✕ เอาออก
+                    </Text>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {recent.length > 0 && (
+              <Card size="small" title={<Text type="secondary">พิมพ์ไปแล้วรอบนี้ ({recent.length})</Text>}>
+                <Flex wrap gap={6}>
+                  {recent.map((l) => (
+                    <Tag key={l.id} color="blue" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                      {l.barcode} · {l.round}/{l.maxRound}
+                    </Tag>
+                  ))}
+                </Flex>
+              </Card>
+            )}
+          </Flex>
+        </Col>
+
+        {/* ===== ตัวอย่าง + ประวัติ ===== */}
+        <Col xs={24} xl={10}>
+          <Flex vertical gap={20}>
+            <Card
+              title={
+                <Space>
+                  <EyeOutlined style={{ color: '#2563eb' }} />
+                  ตัวอย่างสติ๊กเกอร์
+                </Space>
+              }
+              extra={
+                <Space size={12}>
+                  {focusItem && (
+                    <Tooltip title={`ตั้งค่าของประเภท "${focusItem.name}" — มีผลกับทุกชิ้นของประเภทนี้ (แก้ได้ที่หน้าประเภทอุปกรณ์ด้วย)`}>
+                      <Space size={6}>
+                        <BarcodeOutlined style={{ color: focusItem.useBarcode ? '#2563eb' : '#94a3b8' }} />
+                        <Text type="secondary">บาร์โคด</Text>
+                        <Switch size="small" checked={focusItem.useBarcode} onChange={toggleBarcode} />
+                      </Space>
+                    </Tooltip>
+                  )}
+                  {focusRow && <Text code>{focusRow.sn}</Text>}
+                </Space>
+              }
+            >
+              <div className="sticker-preview-wrap">
+                <div className="sticker-preview">
+                  {preview ? (
+                    <Sticker data={preview} />
+                  ) : (
+                    <Flex
+                      vertical
+                      align="center"
+                      justify="center"
+                      gap={6}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: '2px dashed #cbd5e1',
+                        borderRadius: 12,
+                        color: '#94a3b8',
+                      }}
+                    >
+                      <BarcodeOutlined style={{ fontSize: 36 }} />
+                      <Text type="secondary">ยิง SN เพื่อดูตัวอย่างสติ๊กเกอร์</Text>
+                    </Flex>
+                  )}
+                </div>
+              </div>
+              <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginTop: 10, fontSize: 12 }}>
+                {focusRow && focusRow.state !== 'ok' && preview
+                  ? 'แสดงดวงล่าสุดที่เคยพิมพ์ — ชิ้นนี้พิมพ์รอบใหม่ไม่ได้'
+                  : 'ขนาดจริง 5.0 × 2.5 ซม. · กรอบสีส้มเป็นของม้วนสติ๊กเกอร์ ไม่ได้พิมพ์ออกไป'}
+              </Text>
+            </Card>
+
+            <Card
+              title={
+                <Space>
+                  <HistoryOutlined style={{ color: '#2563eb' }} />
+                  ประวัติของชิ้นนี้
+                </Space>
+              }
+            >
+              {focusUnit ? (
+                <UnitHistory unit={focusUnit} />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยิง SN เพื่อดูประวัติ" />
+              )}
+            </Card>
+          </Flex>
+        </Col>
+      </Row>
+
+      <RegisterUnitModal
+        open={!!register}
+        onClose={() => (setRegister(null), focusScan())}
+        defaultSn={register?.sn}
+        replaces={register?.replaces}
+        defaultPrintNow={register?.rowKey == null}
+        onDone={(units) => replaceRowSn(register?.rowKey, units)}
+      />
+      <DisposeModal
+        unit={dispose?.unit ?? null}
+        onClose={() => (setDispose(null), focusScan())}
+        onDisposed={(u, replace) => {
+          const rowKey = dispose?.rowKey;
+          if (replace) setRegister({ replaces: u, rowKey });
+          else if (rowKey != null) removeRow(rowKey);
+        }}
+      />
+      <ReprintModal open={reprintOpen} onClose={() => (setReprintOpen(false), focusScan())} />
+    </>
+  );
+}
+
+/** แถว 1 รายการในคิว — สีและปุ่มบอกชัดว่าต้องทำอะไร */
+function QueueItem({
+  row,
+  selected,
+  onSelect,
+  onRemove,
+  onRegister,
+  onDispose,
+  onReplace,
+}: {
+  row: Resolved;
+  selected: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+  onRegister: () => void;
+  onDispose: () => void;
+  onReplace: () => void;
+}) {
+  const { info } = row;
+  const tone = {
+    ok: { bg: '#ffffff', icon: <CheckCircleFilled style={{ color: '#16a34a' }} /> },
+    notfound: { bg: '#fffbeb', icon: <QuestionCircleFilled style={{ color: '#f59e0b' }} /> },
+    last: { bg: '#fef2f2', icon: <ExclamationCircleFilled style={{ color: '#ef4444' }} /> },
+    disposed: { bg: '#fef2f2', icon: <CloseCircleFilled style={{ color: '#ef4444' }} /> },
+    notype: { bg: '#fef2f2', icon: <CloseCircleFilled style={{ color: '#ef4444' }} /> },
+  }[row.state];
+
+  return (
+    <Flex
+      align="center"
+      gap={12}
+      onClick={onSelect}
+      style={{
+        padding: '12px 16px',
+        background: tone.bg,
+        borderBottom: '1px solid #f0f0f0',
+        borderLeft: `4px solid ${selected ? '#2563eb' : 'transparent'}`,
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ fontSize: 20 }}>{tone.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Space size={8} wrap>
+          <Text code style={{ fontSize: 14 }}>
+            {row.sn}
+          </Text>
+          {info?.item && <Text strong>{info.item.name}</Text>}
+        </Space>
+        <div style={{ marginTop: 2 }}>
+          {row.state === 'ok' && (
+            <Space size={12} wrap>
+              <Text>
+                พิมพ์ <Text strong style={{ color: row.round === info!.unit.maxRound ? '#d97706' : '#1d4ed8' }}>
+                  รอบ {row.round}/{info!.unit.maxRound}
+                </Text>
+                {row.round === info!.unit.maxRound && <Text type="warning"> (รอบสุดท้าย)</Text>}
+              </Text>
+              <Text type="secondary">หมดอายุ {thaiDate(row.exp)}</Text>
+            </Space>
+          )}
+          {row.state === 'notfound' && <Text type="warning">ไม่พบ SN นี้ในระบบ — ลงทะเบียนก่อน</Text>}
+          {row.state === 'last' && (
+            <Text type="danger">
+              ใช้ครบ {info!.unit.maxRound} รอบแล้ว — ห้าม sterilize ซ้ำ ต้องทำลาย
+            </Text>
+          )}
+          {row.state === 'disposed' && <Text type="danger">ชิ้นนี้ถูกทำลายไปแล้ว</Text>}
+          {row.state === 'notype' && <Text type="danger">ประเภทของชิ้นนี้ถูกลบไปแล้ว</Text>}
+        </div>
+      </div>
+      {row.state === 'ok' && info && (
+        <span className="hide-sm">
+          <CycleBar used={row.round!} max={info.unit.maxRound} width={100} />
+        </span>
+      )}
+      {row.state === 'notfound' && (
+        <Button type="primary" icon={<PlusCircleOutlined />} onClick={(e) => (e.stopPropagation(), onRegister())}>
+          ลงทะเบียน
+        </Button>
+      )}
+      {row.state === 'last' && (
+        <Button danger type="primary" icon={<SwapOutlined />} onClick={(e) => (e.stopPropagation(), onDispose())}>
+          ทำลาย & เปลี่ยนชิ้น
+        </Button>
+      )}
+      {row.state === 'disposed' && (
+        <Button icon={<SwapOutlined />} onClick={(e) => (e.stopPropagation(), onReplace())}>
+          ชิ้นทดแทน
+        </Button>
+      )}
+      <Tooltip title="เอาออกจากรายการ">
+        <Button type="text" icon={<CloseOutlined />} onClick={(e) => (e.stopPropagation(), onRemove())} />
+      </Tooltip>
+    </Flex>
+  );
+}

@@ -1,0 +1,85 @@
+'use client';
+
+import JsBarcode from 'jsbarcode';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { thaiDate } from '@/lib/date';
+import type { StickerData } from '@/lib/types';
+
+/**
+ * สติ๊กเกอร์ขนาดจริง 50 x 25 มม. — ใช้ทั้งตัวอย่างบนจอและตอนสั่งพิมพ์
+ * กรอบสีส้มพิมพ์มาจากโรงงานบนม้วนสติ๊กเกอร์แล้ว จึงพิมพ์เฉพาะเนื้อหาสีดำด้านใน
+ */
+export default function Sticker({ data, onReady }: { data: StickerData; onReady?: () => void }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const nameRef = useRef<HTMLDivElement>(null);
+  const [barcodeError, setBarcodeError] = useState(false);
+
+  useLayoutEffect(() => {
+    // 1) วาดบาร์โคด
+    let err = false;
+    if (data.useBarcode && svgRef.current) {
+      try {
+        JsBarcode(svgRef.current, data.barcode || '0', {
+          format: 'CODE128',
+          displayValue: false,
+          margin: 0,
+          width: 2,
+          height: 60,
+        });
+        svgRef.current.setAttribute('preserveAspectRatio', 'none');
+        svgRef.current.removeAttribute('width');
+        svgRef.current.removeAttribute('height');
+      } catch {
+        err = true;
+      }
+    }
+    setBarcodeError(err);
+
+    // 2) ย่อชื่อให้พอดีพื้นที่
+    const el = nameRef.current;
+    if (el) {
+      el.style.fontSize = '';
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      const limitH = el.clientHeight;
+      const fits = () =>
+        el.scrollWidth <= el.clientWidth && (data.useBarcode || el.scrollHeight <= Math.max(limitH, el.clientHeight));
+      let guard = 0;
+      while (!fits() && size > 6 && guard++ < 80) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+    }
+    onReady?.();
+  }, [data, onReady]);
+
+  return (
+    <div className={`sticker${data.useBarcode ? '' : ' no-barcode'}`}>
+      {data.useBarcode &&
+        (barcodeError ? (
+          <div className="st-code st-error">บาร์โคดไม่ถูกต้อง</div>
+        ) : (
+          <>
+            <svg ref={svgRef} className="st-barcode" />
+            <div className="st-code">{data.barcode}</div>
+          </>
+        ))}
+      <div ref={nameRef} className="st-name">
+        {data.name}
+      </div>
+      {!data.useBarcode && data.barcode && <div className="st-sn">SN {data.barcode}</div>}
+      <div className="st-bottom">
+        <div className="st-dates">
+          <div>
+            วันผลิต <b className="st-date">{thaiDate(data.mfg)}</b>
+          </div>
+          <div>
+            หมดอายุ <b className="st-date">{thaiDate(data.exp)}</b>
+          </div>
+        </div>
+        <div className="st-round">
+          รอบ {data.round}/{data.maxRound}
+        </div>
+      </div>
+    </div>
+  );
+}

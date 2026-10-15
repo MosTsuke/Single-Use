@@ -1,0 +1,172 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Prompt', -apple-system, 'Segoe UI', sans-serif;
+  background: #f4f6fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ================= สติ๊กเกอร์ 50 x 25 มม. ================= */
+.sticker {
+  width: 50mm;
+  height: 25mm;
+  /* เว้นขอบด้านในไว้ให้กรอบสีส้มที่พิมพ์มาจากโรงงาน */
+  padding: 1.8mm 3mm 2mm 3mm;
+  font-family: 'Sarabun', 'Prompt', sans-serif;
+  color: #000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+.sticker .st-barcode {
+  width: 100%;
+  height: 6.2mm;
+  display: block;
+}
+.sticker .st-code {
+  font-size: 2.1mm;
+  line-height: 1;
+  text-align: center;
+  letter-spacing: 0.3mm;
+  margin-top: 0.3mm;
+}
+.sticker .st-error {
+  height: 6.2mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0.2mm dashed #000;
+}
+.sticker .st-name {
+  /* line-height เผื่อสระบน/ล่างของภาษาไทย (ไม้โท, สระอุ) ไม่ให้ถูกตัด */
+  font-size: 3.6mm;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  margin-top: 0.1mm;
+}
+.sticker .st-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: auto;
+  gap: 1mm;
+}
+.sticker .st-dates {
+  font-size: 2.6mm;
+  line-height: 1.25;
+  font-weight: 400; /* ป้าย "วันผลิต/หมดอายุ" ตัวปกติ ส่วนวันที่ตัวหนา (.st-date) */
+  white-space: nowrap;
+}
+.sticker .st-date {
+  font-weight: 800;
+  font-size: 1.08em;
+}
+.sticker .st-round {
+  font-size: 4mm;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+.sticker.no-barcode .st-name {
+  font-size: 4.6mm;
+  line-height: 1.35;
+  margin-top: 0.8mm;
+  white-space: normal;
+  max-height: 12.5mm;
+}
+.sticker .st-sn {
+  font-size: 2.3mm;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: 0.2mm;
+  margin-top: 0.3mm;
+}
+.sticker.no-barcode .st-dates {
+  font-size: 2.9mm;
+}
+.sticker.no-barcode .st-round {
+  font-size: 4.6mm;
+}
+
+/* ตัวอย่างบนจอ: ขยาย 2 เท่า และจำลองกรอบสีส้มของม้วนสติ๊กเกอร์ */
+.sticker-preview {
+  width: 100mm;
+  height: 50mm;
+  position: relative;
+}
+.sticker-preview .sticker {
+  transform: scale(2);
+  transform-origin: top left;
+  position: absolute;
+  inset: 0 auto auto 0;
+  border-radius: 1.6mm;
+  box-shadow:
+    inset 0 0 0 1.1mm #f59e0b,
+    0 6px 20px rgba(15, 23, 42, 0.12);
+}
+.sticker-preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.08) 1px, transparent 0) 0 0 / 14px 14px,
+    #f8fafc;
+  overflow: hidden;
+}
+@media (max-width: 480px) {
+  .sticker-preview {
+    zoom: 0.8;
+  }
+}
+
+/* พื้นที่สำหรับพิมพ์: ซ่อนไว้นอกจอ (ไม่ใช้ display:none เพื่อให้วัดขนาดตัวอักษรได้) */
+#print-area {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+}
+
+@media print {
+  @page {
+    size: 50mm 25mm;
+    margin: 0;
+  }
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body > *:not(#print-area) {
+    display: none !important;
+  }
+  #print-area {
+    position: static;
+    left: auto;
+  }
+  #print-area .sticker {
+    break-after: page;
+    page-break-after: always;
+  }
+  #print-area .sticker:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .hide-sm {
+    display: none;
+  }
+}
