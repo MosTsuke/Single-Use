@@ -3,62 +3,53 @@
 import {
   AppstoreOutlined,
   CheckCircleOutlined,
-  DeleteOutlined,
   ExclamationCircleOutlined,
-  HistoryOutlined,
   PlusCircleOutlined,
-  PrinterOutlined,
   SearchOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import {
-  Button,
-  Card,
-  Col,
-  Descriptions,
-  Drawer,
-  Empty,
-  Flex,
-  Input,
-  Row,
-  Segmented,
-  Select,
-  Space,
-  Statistic,
-  Table,
-  Tooltip,
-  Typography,
-} from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import DisposeModal from '@/components/DisposeModal';
+import { Button, Card, Col, Empty, Flex, Input, Row, Segmented, Select, Statistic } from 'antd';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
-import { CycleBar, StatusTag } from '@/components/UnitBits';
-import UnitHistory from '@/components/UnitHistory';
-import { thaiDate, thaiDateTime, todayISO } from '@/lib/date';
-import { useStore, type UnitInfo } from '@/lib/store';
-import { DISPOSE_REASON_LABEL, type Unit, type UnitStatus } from '@/lib/types';
+import UnitTable from '@/components/UnitTable';
+import { useStore } from '@/lib/store';
+import type { UnitStatus } from '@/lib/types';
 
 type StatusFilter = 'all' | 'usable' | UnitStatus;
-const { Text } = Typography;
+const STATUS_VALUES: StatusFilter[] = ['all', 'usable', 'last', 'disposed'];
 
 export default function UnitsPage() {
+  return (
+    <Suspense>
+      <UnitsView />
+    </Suspense>
+  );
+}
+
+function UnitsView() {
   const { units, items, getUnitInfo } = useStore();
-  const [status, setStatus] = useState<StatusFilter>('usable');
-  const [itemFilter, setItemFilter] = useState<number | undefined>();
+  const params = useSearchParams();
+  // เปิดจากหน้ารายการอุปกรณ์ด้วย ?item=<id>&status=<usable|last|disposed|all>
+  const [status, setStatus] = useState<StatusFilter>(() => {
+    const s = params.get('status') as StatusFilter | null;
+    return s && STATUS_VALUES.includes(s) ? s : 'usable';
+  });
+  const [itemFilter, setItemFilter] = useState<number | undefined>(() => {
+    const id = Number(params.get('item'));
+    return id > 0 ? id : undefined;
+  });
   const [q, setQ] = useState('');
-  const [viewing, setViewing] = useState<Unit | null>(null);
-  const [disposing, setDisposing] = useState<Unit | null>(null);
-  const [register, setRegister] = useState<{ replaces?: Unit } | null>(null);
+  const [register, setRegister] = useState(false);
 
   const all = useMemo(() => units.map(getUnitInfo), [units, getUnitInfo]);
 
   const counts = useMemo(() => {
+    // นับตามรายการที่เลือก (ถ้าเลือก) ให้ตัวเลขบนการ์ดตรงกับตาราง
     const c = { new: 0, active: 0, last: 0, disposed: 0 } as Record<UnitStatus, number>;
-    all.forEach((i) => c[i.status]++);
+    all.forEach((i) => (!itemFilter || i.unit.itemId === itemFilter) && c[i.status]++);
     return c;
-  }, [all]);
+  }, [all, itemFilter]);
 
   const rows = useMemo(() => {
     const kw = q.trim().toLowerCase();
@@ -72,86 +63,6 @@ export default function UnitsPage() {
       })
       .reverse();
   }, [all, status, itemFilter, q]);
-
-  const viewingInfo = viewing ? getUnitInfo(units.find((u) => u.id === viewing.id) ?? viewing) : null;
-  const today = todayISO();
-
-  const columns: ColumnsType<UnitInfo> = [
-    {
-      title: 'SN',
-      key: 'sn',
-      width: 160,
-      sorter: (a, b) => a.unit.sn.localeCompare(b.unit.sn),
-      render: (_, r) => (
-        <a onClick={() => setViewing(r.unit)}>
-          <Text code copyable={{ text: r.unit.sn }}>
-            {r.unit.sn}
-          </Text>
-        </a>
-      ),
-    },
-    {
-      title: 'ประเภท',
-      key: 'type',
-      ellipsis: true,
-      render: (_, r) => r.item?.name ?? <Text type="secondary">(ประเภทถูกลบ)</Text>,
-    },
-    {
-      title: 'ใช้ไปแล้ว',
-      key: 'used',
-      width: 170,
-      sorter: (a, b) => a.used / a.unit.maxRound - b.used / b.unit.maxRound,
-      render: (_, r) => <CycleBar used={r.used} max={r.unit.maxRound} />,
-    },
-    {
-      title: 'สถานะ',
-      key: 'status',
-      width: 160,
-      render: (_, r) => <StatusTag status={r.status} />,
-    },
-    {
-      title: 'Sterilize ล่าสุด / หมดอายุ',
-      key: 'last',
-      width: 230,
-      render: (_, r) =>
-        r.lastLog ? (
-          <Space orientation="vertical" size={0}>
-            <Text>{thaiDateTime(r.lastLog.time)}</Text>
-            <Text type={r.lastLog.exp < today && r.status !== 'disposed' ? 'danger' : 'secondary'} style={{ fontSize: 12 }}>
-              หมดอายุ {thaiDate(r.lastLog.exp)}
-              {r.lastLog.exp < today && r.status !== 'disposed' && ' (เลยกำหนด)'}
-            </Text>
-          </Space>
-        ) : (
-          <Text type="secondary">—</Text>
-        ),
-    },
-    {
-      title: '',
-      key: 'act',
-      width: 140,
-      align: 'right',
-      render: (_, r) => (
-        <Space size={0}>
-          <Tooltip title="ประวัติ">
-            <Button type="text" icon={<HistoryOutlined />} onClick={() => setViewing(r.unit)} />
-          </Tooltip>
-          {r.nextRound != null && (
-            <Tooltip title="Sterilize & พิมพ์">
-              <Link href={`/print?sn=${encodeURIComponent(r.unit.sn)}`}>
-                <Button type="text" icon={<PrinterOutlined />} />
-              </Link>
-            </Tooltip>
-          )}
-          {r.status !== 'disposed' && (
-            <Tooltip title="บันทึกทำลาย">
-              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setDisposing(r.unit)} />
-            </Tooltip>
-          )}
-        </Space>
-      ),
-    },
-  ];
 
   const statCard = (title: string, value: number, icon: React.ReactNode, filter: StatusFilter, color: string) => (
     <Card
@@ -176,14 +87,14 @@ export default function UnitsPage() {
           {statCard('ทำลายแล้ว', counts.disposed, <StopOutlined />, 'disposed', '#64748b')}
         </Col>
         <Col xs={12} lg={6}>
-          {statCard('ทั้งหมด', units.length, <AppstoreOutlined />, 'all', '#2563eb')}
+          {statCard('ทั้งหมด', counts.new + counts.active + counts.last + counts.disposed, <AppstoreOutlined />, 'all', '#2563eb')}
         </Col>
       </Row>
 
       <Card
         title="อุปกรณ์รายชิ้น"
         extra={
-          <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister({})}>
+          <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister(true)}>
             ลงทะเบียนอุปกรณ์
           </Button>
         }
@@ -201,7 +112,7 @@ export default function UnitsPage() {
           />
           <Select
             allowClear
-            placeholder="ทุกประเภท"
+            placeholder="ทุกรายการ"
             style={{ width: 200 }}
             value={itemFilter}
             onChange={setItemFilter}
@@ -216,90 +127,20 @@ export default function UnitsPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </Flex>
-        <Table
-          rowKey={(r) => r.unit.id}
-          columns={columns}
-          dataSource={rows}
-          scroll={{ x: 1000 }}
+        <UnitTable
+          rows={rows}
           pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} ชิ้น` }}
-          locale={{
-            emptyText: (
-              <Empty description="ไม่มีอุปกรณ์ในกลุ่มนี้">
-                <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister({})}>
-                  ลงทะเบียนอุปกรณ์
-                </Button>
-              </Empty>
-            ),
-          }}
+          emptyText={
+            <Empty description="ไม่มีอุปกรณ์ในกลุ่มนี้">
+              <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister(true)}>
+                ลงทะเบียนอุปกรณ์
+              </Button>
+            </Empty>
+          }
         />
       </Card>
 
-      <Drawer
-        open={!!viewing}
-        onClose={() => setViewing(null)}
-        size={480}
-        title={
-          viewingInfo && (
-            <Space>
-              <Text code>{viewingInfo.unit.sn}</Text>
-              <StatusTag status={viewingInfo.status} />
-            </Space>
-          )
-        }
-        extra={
-          viewingInfo?.nextRound != null && (
-            <Link href={`/print?sn=${encodeURIComponent(viewingInfo.unit.sn)}`}>
-              <Button type="primary" icon={<PrinterOutlined />}>
-                Sterilize
-              </Button>
-            </Link>
-          )
-        }
-      >
-        {viewingInfo && (
-          <>
-            <Descriptions
-              column={1}
-              size="small"
-              bordered
-              items={[
-                { key: 't', label: 'ประเภท', children: viewingInfo.item?.name ?? '(ประเภทถูกลบ)' },
-                { key: 'u', label: 'ใช้ไปแล้ว', children: <CycleBar used={viewingInfo.used} max={viewingInfo.unit.maxRound} /> },
-                { key: 's', label: 'ที่มาของ SN', children: viewingInfo.unit.manufacturerSn ? 'ผู้ผลิต' : 'ระบบสร้าง' },
-                { key: 'r', label: 'ลงทะเบียน', children: thaiDateTime(viewingInfo.unit.registeredAt) },
-                ...(viewingInfo.unit.replacesSn
-                  ? [{ key: 'rp', label: 'ทดแทนชิ้น', children: <Text code>{viewingInfo.unit.replacesSn}</Text> }]
-                  : []),
-                ...(viewingInfo.unit.disposedAt
-                  ? [
-                      {
-                        key: 'd',
-                        label: 'ทำลาย',
-                        children: `${thaiDateTime(viewingInfo.unit.disposedAt)} — ${DISPOSE_REASON_LABEL[viewingInfo.unit.disposeReason ?? 'other']}`,
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-            <Typography.Title level={5} style={{ marginTop: 24 }}>
-              ประวัติ
-            </Typography.Title>
-            <UnitHistory unit={viewingInfo.unit} />
-            {viewingInfo.status !== 'disposed' && (
-              <Button danger block icon={<DeleteOutlined />} onClick={() => setDisposing(viewingInfo.unit)}>
-                บันทึกทำลาย
-              </Button>
-            )}
-          </>
-        )}
-      </Drawer>
-
-      <DisposeModal
-        unit={disposing}
-        onClose={() => setDisposing(null)}
-        onDisposed={(u, replace) => replace && setRegister({ replaces: u })}
-      />
-      <RegisterUnitModal open={!!register} onClose={() => setRegister(null)} replaces={register?.replaces} />
+      <RegisterUnitModal open={register} onClose={() => setRegister(false)} defaultItemId={itemFilter} />
     </Flex>
   );
 }

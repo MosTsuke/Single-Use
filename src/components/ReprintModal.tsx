@@ -5,7 +5,7 @@ import { App, Button, Empty, Flex, Input, Modal, Space, Switch, Table, Tag, Typo
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { thaiDate, thaiDateTime } from '@/lib/date';
-import { usePrintStickers } from '@/lib/print';
+import { usePrinterSettings, usePrintStickers } from '@/lib/print';
 import { useStore } from '@/lib/store';
 import Sticker from '@/components/Sticker';
 import type { PrintLog } from '@/lib/types';
@@ -20,6 +20,7 @@ interface Props {
 export default function ReprintModal({ open, onClose, itemId }: Props) {
   const { logs, units, items, createReprint } = useStore();
   const printStickers = usePrintStickers();
+  const { settings: printer } = usePrinterSettings();
   const { message } = App.useApp();
   const [q, setQ] = useState('');
   const [confirming, setConfirming] = useState<PrintLog | null>(null);
@@ -42,7 +43,7 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
       .reverse();
   }, [logs, units, q, itemId]);
 
-  // เปิดหน้าต่างยืนยัน พร้อมตัวอย่างสติ๊กเกอร์ — ค่าเริ่มต้นบาร์โคดตามที่ตั้งไว้ของประเภทอุปกรณ์
+  // เปิดหน้าต่างยืนยัน พร้อมตัวอย่างสติ๊กเกอร์ — ค่าเริ่มต้นบาร์โคดตามที่ตั้งไว้ของรายการอุปกรณ์
   const doReprint = (log: PrintLog) => {
     const item = items.find((i) => i.id === log.itemId);
     setWithBarcode(item?.useBarcode ?? log.useBarcode);
@@ -194,6 +195,7 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
               </Space>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 มีผลกับดวงนี้ดวงเดียว
+                {printer.printerName && <> · พิมพ์ที่ <b>{printer.printerName}</b></>}
               </Typography.Text>
             </Flex>
           </>

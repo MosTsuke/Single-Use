@@ -9,6 +9,11 @@ import type { StickerData } from '@/lib/types';
  * สติ๊กเกอร์ขนาดจริง 50 x 25 มม. — ใช้ทั้งตัวอย่างบนจอและตอนสั่งพิมพ์
  * กรอบสีส้มพิมพ์มาจากโรงงานบนม้วนสติ๊กเกอร์แล้ว จึงพิมพ์เฉพาะเนื้อหาสีดำด้านใน
  */
+/** ความกว้าง 1 module ของบาร์โคด (มม.) — 2 จุดของหัวพิมพ์ 203 dpi */
+const BARCODE_MODULE_MM = 0.25;
+/** ความกว้างพื้นที่บาร์โคดบนสติ๊กเกอร์ (50 มม. − ขอบซ้ายขวา 3 มม.) */
+const BARCODE_MAX_MM = 44;
+
 export default function Sticker({ data, onReady }: { data: StickerData; onReady?: () => void }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const nameRef = useRef<HTMLDivElement>(null);
@@ -19,16 +24,24 @@ export default function Sticker({ data, onReady }: { data: StickerData; onReady?
     let err = false;
     if (data.useBarcode && svgRef.current) {
       try {
+        // วาด 1 หน่วยต่อ 1 module แล้วกำหนดขนาดจริงเป็น มม.
         JsBarcode(svgRef.current, data.barcode || '0', {
           format: 'CODE128',
           displayValue: false,
           margin: 0,
-          width: 2,
+          width: 1,
           height: 60,
         });
-        svgRef.current.setAttribute('preserveAspectRatio', 'none');
-        svgRef.current.removeAttribute('width');
-        svgRef.current.removeAttribute('height');
+        const svg = svgRef.current;
+        const modules = parseFloat(svg.getAttribute('width') || '0');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.setAttribute('shape-rendering', 'crispEdges');
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        // Godex EZ120 = 203 dpi (8 จุด/มม.) → 1 module = 2 จุด = 0.25 มม. พอดีหัวพิมพ์ แท่งคมและสแกนง่าย
+        // ถ้า SN ยาวจนเกินพื้นที่ (44 มม.) จึงยอมยืดให้เต็มกว้างแทน
+        const widthMm = modules * BARCODE_MODULE_MM;
+        svg.style.width = modules > 0 && widthMm <= BARCODE_MAX_MM ? `${widthMm}mm` : '100%';
       } catch {
         err = true;
       }
@@ -80,6 +93,11 @@ export default function Sticker({ data, onReady }: { data: StickerData; onReady?
           รอบ {data.round}/{data.maxRound}
         </div>
       </div>
+      {data.staffName !== undefined && (
+        <div className="st-staff">
+          จนท. <b>{data.staffName || '—'}</b>
+        </div>
+      )}
     </div>
   );
 }

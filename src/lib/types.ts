@@ -1,3 +1,14 @@
+/** เจ้าหน้าที่ผู้พิมพ์สติ๊กเกอร์ */
+export interface Staff {
+  id: number;
+  /** ชื่อที่แสดงบนสติ๊กเกอร์ */
+  name: string;
+  /** รหัสพนักงาน (ไม่บังคับ) ใช้ค้นหาในดรอปดาวน์ */
+  code?: string;
+  /** ปิดใช้งาน = ไม่แสดงในดรอปดาวน์ แต่ประวัติเดิมยังอยู่ */
+  active: boolean;
+}
+
 /** ประเภทอุปกรณ์ (ข้อมูลถาวร) เช่น "สาย Suction" */
 export interface MasterItem {
   id: number;
@@ -12,7 +23,7 @@ export interface MasterItem {
   snPrefix: string;
 }
 
-export type DisposeReason = 'max_round' | 'damaged' | 'lost' | 'other';
+export type DisposeReason = 'max_round' | 'damaged' | 'worn' | 'lost' | 'other';
 
 /** อุปกรณ์ 1 ชิ้น ติดตามด้วย SN */
 export interface Unit {
@@ -59,6 +70,14 @@ export interface PrintLog {
   isReprint: boolean;
   /** id ของการพิมพ์ต้นฉบับ (เฉพาะการพิมพ์ซ้ำ) */
   sourceId?: number;
+  /** รอบที่ควรเป็นตามลำดับ เมื่อหน้างานพิมพ์ข้ามรอบ (เช่น ควรเป็น 3 แต่พิมพ์ 5) */
+  skippedFrom?: number;
+  /** หมายเหตุประกอบ (บังคับเมื่อพิมพ์ข้ามรอบ) */
+  note?: string;
+  /** เจ้าหน้าที่ผู้พิมพ์ (พิมพ์ซ้ำใช้ชื่อเดิมของดวงต้นฉบับ) */
+  staffId?: number;
+  /** ชื่อเจ้าหน้าที่ ณ ตอนพิมพ์ — เก็บไว้ในประวัติแม้แก้ชื่อ/ลบภายหลัง */
+  staffName?: string;
   /** YYYY-MM-DD HH:mm ตามเวลาเครื่อง */
   time: string;
 }
@@ -72,17 +91,24 @@ export interface StickerData {
   exp: string;
   round: number;
   maxRound: number;
+  /** ชื่อเจ้าหน้าที่ผู้พิมพ์ */
+  staffName?: string;
 }
 
 export interface AppData {
   items: MasterItem[];
   units: Unit[];
   logs: PrintLog[];
+  staff: Staff[];
 }
+
+/** สาเหตุที่เลือกได้เมื่อทำลายก่อนครบรอบ */
+export const EARLY_DISPOSE_REASONS: DisposeReason[] = ['damaged', 'worn', 'lost', 'other'];
 
 export const DISPOSE_REASON_LABEL: Record<DisposeReason, string> = {
   max_round: 'ครบจำนวนรอบ',
   damaged: 'ชำรุด / เสียหาย',
+  worn: 'เสื่อมสภาพ',
   lost: 'สูญหาย',
   other: 'อื่น ๆ',
 };

@@ -15,7 +15,7 @@ body {
   width: 50mm;
   height: 25mm;
   /* เว้นขอบด้านในไว้ให้กรอบสีส้มที่พิมพ์มาจากโรงงาน */
-  padding: 1.8mm 3mm 2mm 3mm;
+  padding: 1.6mm 3mm 1.2mm 3mm;
   font-family: 'Sarabun', 'Prompt', sans-serif;
   color: #000;
   background: #fff;
@@ -26,8 +26,9 @@ body {
 }
 .sticker .st-barcode {
   width: 100%;
-  height: 6.2mm;
+  height: 5.6mm;
   display: block;
+  margin: 0 auto;
 }
 .sticker .st-code {
   font-size: 2.1mm;
@@ -37,7 +38,7 @@ body {
   margin-top: 0.3mm;
 }
 .sticker .st-error {
-  height: 6.2mm;
+  height: 5.6mm;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,9 +46,9 @@ body {
 }
 .sticker .st-name {
   /* line-height เผื่อสระบน/ล่างของภาษาไทย (ไม้โท, สระอุ) ไม่ให้ถูกตัด */
-  font-size: 3.6mm;
+  font-size: 3.3mm;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.4;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -61,8 +62,8 @@ body {
   gap: 1mm;
 }
 .sticker .st-dates {
-  font-size: 2.6mm;
-  line-height: 1.25;
+  font-size: 2.2mm;
+  line-height: 1.22;
   font-weight: 400; /* ป้าย "วันผลิต/หมดอายุ" ตัวปกติ ส่วนวันที่ตัวหนา (.st-date) */
   white-space: nowrap;
 }
@@ -71,17 +72,30 @@ body {
   font-size: 1.08em;
 }
 .sticker .st-round {
-  font-size: 4mm;
+  font-size: 3.3mm;
   font-weight: 700;
   white-space: nowrap;
   line-height: 1.1;
 }
 .sticker.no-barcode .st-name {
-  font-size: 4.6mm;
+  font-size: 4.2mm;
   line-height: 1.35;
-  margin-top: 0.8mm;
+  margin-top: 0.6mm;
   white-space: normal;
-  max-height: 12.5mm;
+  max-height: 11.4mm;
+}
+/* ชื่อเจ้าหน้าที่ผู้พิมพ์ — บรรทัดล่างสุด ยาวเกินตัดด้วย … */
+.sticker .st-staff {
+  font-size: 2.2mm;
+  /* สูงพอให้สระล่าง (ุ ู) ไม่ถูกตัด เพราะบรรทัดนี้ใช้ overflow: hidden เพื่อตัดชื่อยาวด้วย … */
+  line-height: 1.6;
+  margin-top: -0.35mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sticker .st-staff b {
+  font-weight: 700;
 }
 .sticker .st-sn {
   font-size: 2.3mm;
@@ -90,11 +104,12 @@ body {
   letter-spacing: 0.2mm;
   margin-top: 0.3mm;
 }
-.sticker.no-barcode .st-dates {
-  font-size: 2.9mm;
+.sticker.no-barcode .st-dates,
+.sticker.no-barcode .st-staff {
+  font-size: 2.5mm;
 }
 .sticker.no-barcode .st-round {
-  font-size: 4.6mm;
+  font-size: 3.8mm;
 }
 
 /* ตัวอย่างบนจอ: ขยาย 2 เท่า และจำลองกรอบสีส้มของม้วนสติ๊กเกอร์ */
@@ -156,6 +171,8 @@ body {
     left: auto;
   }
   #print-area .sticker {
+    /* ชดเชยตำแหน่งตามที่ตั้งไว้ในหน้า ตั้งค่าเครื่องพิมพ์ */
+    transform: translate(var(--print-offset-x, 0mm), var(--print-offset-y, 0mm));
     break-after: page;
     page-break-after: always;
   }

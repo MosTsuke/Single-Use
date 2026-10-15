@@ -1,5 +1,5 @@
 import { dayjs, ISO_DATE } from './date';
-import type { AppData, DisposeReason, MasterItem, PrintLog, Unit } from './types';
+import type { AppData, DisposeReason, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
  * สร้างข้อมูลจำลองสำหรับสาธิตระบบ — ย้อนหลังประมาณ 5 เดือนนับจากวันนี้
@@ -27,6 +27,14 @@ const PLAN: Record<number, { units: number; gap: [number, number]; manufacturer?
 
 const HISTORY_DAYS = 150;
 
+/** สาเหตุทำลายก่อนครบรอบ พร้อมตัวอย่างรายละเอียด */
+const EARLY_REASONS: { reason: DisposeReason; notes: string[] }[] = [
+  { reason: 'damaged', notes: ['พบรอยแตกระหว่างตรวจสภาพ', 'ข้อต่อหลวม ใช้งานไม่ได้', 'ฉีกขาดหลังใช้งาน'] },
+  { reason: 'damaged', notes: ['บรรจุภัณฑ์ฉีกขาด ปนเปื้อน'] },
+  { reason: 'worn', notes: ['วัสดุแข็งกรอบ สีซีด', 'ยางเสื่อม ไม่ยืดหยุ่น'] },
+  { reason: 'lost', notes: ['ไม่ได้รับคืนจากหอผู้ป่วย', 'สูญหายระหว่างส่งต่อผู้ป่วย'] },
+];
+
 function mulberry32(seed: number) {
   return () => {
     seed |= 0;
@@ -36,6 +44,14 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+const DEMO_STAFF: Staff[] = [
+  { id: 1, name: 'สมหญิง ใจดี', code: 'N1023', active: true },
+  { id: 2, name: 'วิภาวรรณ ศรีสุข', code: 'N1045', active: true },
+  { id: 3, name: 'ประเสริฐ มั่นคง', code: 'C0207', active: true },
+  { id: 4, name: 'กนกพร แสงทอง', code: 'N1102', active: true },
+  { id: 5, name: 'ธนพล วงศ์ใหญ่', code: 'C0188', active: false },
+];
 
 export function buildDemoData(seed = 20261014): AppData {
   const rnd = mulberry32(seed);
@@ -97,6 +113,10 @@ export function buildDemoData(seed = 20261014): AppData {
             round: used,
             maxRound: item.maxRound,
             unitKey,
+            ...(() => {
+              const st = DEMO_STAFF[int(0, DEMO_STAFF.length - 1)];
+              return { staffId: st.id, staffName: st.name };
+            })(),
           };
           const t = cursor.hour(int(8, 13)).minute(int(0, 59));
           logs.push({ ...base, key: logKey, isReprint: false, time: t.format('YYYY-MM-DD HH:mm') });
@@ -107,7 +127,8 @@ export function buildDemoData(seed = 20261014): AppData {
           const next = cursor.add(int(plan.gap[0], plan.gap[1]), 'day');
           // ชำรุดก่อนครบรอบ ~4% ต่อรอบ
           if (used < item.maxRound && rnd() < 0.04 && next.isBefore(today)) {
-            disposed = { at: next, reason: rnd() < 0.75 ? 'damaged' : 'lost', note: rnd() < 0.5 ? 'พบรอยแตกระหว่างตรวจสภาพ' : undefined };
+            const early = EARLY_REASONS[Math.floor(rnd() * EARLY_REASONS.length)];
+            disposed = { at: next, reason: early.reason, note: early.notes[Math.floor(rnd() * early.notes.length)] };
             break;
           }
           if (used >= item.maxRound) {
@@ -158,5 +179,5 @@ export function buildDemoData(seed = 20261014): AppData {
     sourceId: srcKey != null ? logId.get(srcKey) : undefined,
   }));
 
-  return { items: DEMO_ITEMS, units: finalUnits, logs: finalLogs };
+  return { items: DEMO_ITEMS, units: finalUnits, logs: finalLogs, staff: DEMO_STAFF };
 }

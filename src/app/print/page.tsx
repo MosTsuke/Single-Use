@@ -14,8 +14,9 @@ import {
   QuestionCircleFilled,
   RedoOutlined,
   ScanOutlined,
+  SettingOutlined,
   SwapOutlined,
-  ThunderboltOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import {
   App,
@@ -27,7 +28,10 @@ import {
   DatePicker,
   Empty,
   Flex,
+  Input,
+  InputNumber,
   Row,
+  Select,
   Space,
   Switch,
   Tag,
@@ -37,34 +41,46 @@ import {
 } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DisposeModal from '@/components/DisposeModal';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
+import PrinterSettingsModal from '@/components/PrinterSettingsModal';
 import ReprintModal from '@/components/ReprintModal';
 import Sticker from '@/components/Sticker';
 import { CycleBar, StatusTag } from '@/components/UnitBits';
 import UnitHistory from '@/components/UnitHistory';
 import { beep } from '@/lib/beep';
-import { dayjs, ISO_DATE, THAI_DATE, thaiDate } from '@/lib/date';
-import { usePrintStickers } from '@/lib/print';
+import { dayjs, ISO_DATE, THAI_DATE, thaiDate, todayISO } from '@/lib/date';
+import { usePrinterSettings, usePrintStickers } from '@/lib/print';
 import { useStore, type UnitInfo } from '@/lib/store';
 import type { PrintLog, StickerData, Unit } from '@/lib/types';
 import { normSn } from '@/lib/units';
 
 const { Text } = Typography;
-const AUTO_KEY = 'station_autoPrint';
 
 type RowState = 'ok' | 'notfound' | 'last' | 'disposed' | 'notype';
 
 interface QueueRow {
   key: number;
   sn: string;
+  /** รอบที่หน้างานเลือกพิมพ์ (ไม่ระบุ = รอบถัดไปตามลำดับ) */
+  round?: number;
+  /** หมายเหตุ — บังคับเมื่อพิมพ์ข้ามรอบ */
+  note?: string;
+  /** วันผลิตของดวงนี้ (YYYY-MM-DD) — ค่าเริ่มต้นคือวันที่ยิงเข้ารายการ */
+  mfg: string;
 }
 
 interface Resolved extends QueueRow {
   state: RowState;
   info?: UnitInfo;
-  round?: number;
+  /** รอบถัดไปตามลำดับ (ค่าต่ำสุดที่เลือกได้) */
+  natural?: number;
+  /** พิมพ์ข้ามรอบหรือไม่ */
+  skipped?: boolean;
+  /** ข้ามรอบแต่ยังไม่กรอกหมายเหตุ → ยังพิมพ์ไม่ได้ */
+  needsNote?: boolean;
   exp?: string;
 }
 
@@ -77,42 +93,28 @@ export default function PrintPage() {
 }
 
 function SterilizeStation() {
-  const { units, findUnitBySn, getUnitInfo, sterilize, updateItem } = useStore();
+  const { units, staff, findUnitBySn, getUnitInfo, sterilize, updateItem } = useStore();
   const printStickers = usePrintStickers();
+  const { settings: printer } = usePrinterSettings();
   const { message } = App.useApp();
   const params = useSearchParams();
   const scanRef = useRef<RefSelectProps>(null);
   const keySeq = useRef(0);
 
   const [scan, setScan] = useState('');
+  // เจ้าหน้าที่ผู้พิมพ์ — บังคับเลือกก่อนพิมพ์ (เลือกครั้งเดียว ใช้ต่อได้จนกว่าจะเปลี่ยน/รีโหลดหน้า)
+  const [staffId, setStaffId] = useState<number | null>(null);
+  const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
+  const currentStaff = activeStaff.find((s) => s.id === staffId);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
-  const [mfg, setMfg] = useState<Dayjs>(() => dayjs());
-  const [autoPrint, setAutoPrint] = useState(false);
   const [recent, setRecent] = useState<PrintLog[]>([]);
   const [register, setRegister] = useState<{ sn?: string; replaces?: Unit; rowKey?: number } | null>(null);
   const [dispose, setDispose] = useState<{ unit: Unit; rowKey?: number } | null>(null);
   const [reprintOpen, setReprintOpen] = useState(false);
+  const [printerOpen, setPrinterOpen] = useState(false);
 
   const focusScan = useCallback(() => setTimeout(() => scanRef.current?.focus(), 60), []);
-
-  // จำค่า "ยิงแล้วพิมพ์ทันที" ไว้ในเครื่อง
-  useEffect(() => {
-    try {
-      setAutoPrint(localStorage.getItem(AUTO_KEY) === '1');
-    } catch {
-      /* ignore */
-    }
-  }, []);
-  const toggleAuto = (v: boolean) => {
-    setAutoPrint(v);
-    try {
-      localStorage.setItem(AUTO_KEY, v ? '1' : '0');
-    } catch {
-      /* ignore */
-    }
-    focusScan();
-  };
 
   // ===== ค้นหา + แนะนำ (กรณีสติ๊กเกอร์ลอก/ยิงไม่ติด พิมพ์บางส่วนของ SN หรือชื่ออุปกรณ์ได้) =====
   const justSelected = useRef(false);
@@ -167,27 +169,37 @@ function SterilizeStation() {
       if (info.status === 'disposed') return { ...row, state: 'disposed', info };
       if (info.status === 'last') return { ...row, state: 'last', info };
       if (!info.item) return { ...row, state: 'notype', info };
+      const natural = info.nextRound!;
+      const round = Math.min(info.unit.maxRound, Math.max(natural, row.round ?? natural));
+      const skipped = round > natural;
       return {
         ...row,
         state: 'ok',
         info,
-        round: info.nextRound!,
-        exp: mfg.add(info.item.shelf, 'day').format(ISO_DATE),
+        natural,
+        round,
+        skipped,
+        needsNote: skipped && !row.note?.trim(),
+        exp: dayjs(row.mfg).add(info.item.shelf, 'day').format(ISO_DATE),
       };
     },
-    [findUnitBySn, getUnitInfo, mfg],
+    [findUnitBySn, getUnitInfo],
   );
 
   const rows = useMemo(() => queue.map(resolve), [queue, resolve]);
-  const ready = rows.filter((r) => r.state === 'ok');
-  const problems = rows.length - ready.length;
+  const ready = rows.filter((r) => r.state === 'ok' && !r.needsNote);
+  const waitingNote = rows.filter((r) => r.needsNote).length;
+  const problems = rows.filter((r) => r.state !== 'ok').length;
+
+  const updateRow = (key: number, patch: Partial<QueueRow>) =>
+    setQueue((q) => q.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
   const doSterilize = (list: Resolved[]) => {
-    const mfgIso = mfg.format(ISO_DATE);
     const logs: PrintLog[] = [];
+    if (!currentStaff) return logs;
     for (const r of list) {
       if (!r.info || !r.exp) continue;
-      const res = sterilize(r.info.unit.id, mfgIso, r.exp);
+      const res = sterilize(r.info.unit.id, r.mfg, r.exp, { staffId: currentStaff.id, round: r.round, note: r.note });
       if (res.ok) logs.push(res.value);
       else message.error(`${r.sn}: ${res.error}`);
     }
@@ -209,17 +221,8 @@ function SterilizeStation() {
       setSelected(dup.key);
       return;
     }
-    const row: QueueRow = { key: ++keySeq.current, sn };
+    const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO() };
     const r = resolve(row);
-    if (r.state === 'ok' && autoPrint) {
-      const logs = doSterilize([r]);
-      if (logs.length) {
-        beep('ok');
-        message.success(`${sn} — พิมพ์รอบ ${logs[0].round}/${logs[0].maxRound} แล้ว`);
-      }
-      setSelected(null);
-      return;
-    }
     beep(r.state === 'ok' ? 'ok' : 'error');
     setQueue((q) => [...q, row]);
     setSelected(row.key);
@@ -231,7 +234,7 @@ function SterilizeStation() {
     const sn = params.get('sn');
     if (sn && !fromParam.current) {
       fromParam.current = true;
-      const row = { key: ++keySeq.current, sn };
+      const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO() };
       setQueue([row]);
       setSelected(row.key);
     }
@@ -239,6 +242,11 @@ function SterilizeStation() {
 
   const printAll = () => {
     if (!ready.length) return;
+    if (!currentStaff) {
+      beep('error');
+      message.warning('กรุณาเลือกเจ้าหน้าที่ผู้พิมพ์ก่อน');
+      return;
+    }
     const logs = doSterilize(ready);
     const done = new Set(ready.map((r) => r.key));
     setQueue((q) => q.filter((x) => !done.has(x.key)));
@@ -278,16 +286,17 @@ function SterilizeStation() {
         name: it.name,
         useBarcode: it.useBarcode,
         barcode: focusRow.info.unit.sn,
-        mfg: mfg.format(ISO_DATE),
+        mfg: focusRow.mfg,
         exp: focusRow.exp!,
         round: focusRow.round!,
         maxRound: focusRow.info.unit.maxRound,
+        staffName: currentStaff?.name ?? '',
       };
     }
     // ไม่มีรายการที่เลือก (เช่น เพิ่งพิมพ์เสร็จ) → ล้างตัวอย่าง
     const l = focusRow?.info?.lastLog;
     return l ? { name: l.name, useBarcode: l.useBarcode, barcode: l.barcode, mfg: l.mfg, exp: l.exp, round: l.round, maxRound: l.maxRound } : null;
-  }, [focusRow, mfg]);
+  }, [focusRow, currentStaff]);
 
   return (
     <>
@@ -310,6 +319,9 @@ function SterilizeStation() {
                   <Button icon={<PlusCircleOutlined />} onClick={() => setRegister({})}>
                     ลงทะเบียนชิ้นใหม่
                   </Button>
+                  <Tooltip title="ตั้งค่าเครื่องพิมพ์ / พิมพ์ทดสอบ">
+                    <Button icon={<SettingOutlined />} onClick={() => setPrinterOpen(true)} aria-label="ตั้งค่าเครื่องพิมพ์" />
+                  </Tooltip>
                 </Space>
               </Flex>
               <AutoComplete
@@ -338,28 +350,6 @@ function SterilizeStation() {
                   placeholder: { fontSize: 18 },
                 }}
               />
-              <Flex justify="space-between" align="center" wrap gap={12} style={{ marginTop: 12 }}>
-                <Space size={8}>
-                  <Switch checked={autoPrint} onChange={toggleAuto} />
-                  <Text>
-                    <ThunderboltOutlined style={{ color: '#f59e0b' }} /> ยิงแล้วพิมพ์ทันที
-                  </Text>
-                  <Tooltip title="เปิด: ยิง 1 ครั้ง = พิมพ์ 1 ดวงทันที · ปิด: ยิงสะสมไว้ในรายการ แล้วกดพิมพ์ทีเดียว">
-                    <QuestionCircleFilled style={{ color: '#cbd5e1' }} />
-                  </Tooltip>
-                </Space>
-                <Space size={8}>
-                  <Text type="secondary">วันที่ sterilize</Text>
-                  <DatePicker
-                    value={mfg}
-                    onChange={(d) => d && setMfg(d)}
-                    format={THAI_DATE}
-                    allowClear={false}
-                    suffixIcon={<CalendarOutlined />}
-                    style={{ width: 150 }}
-                  />
-                </Space>
-              </Flex>
             </Card>
 
             {/* ===== รายการรอพิมพ์ ===== */}
@@ -383,9 +373,7 @@ function SterilizeStation() {
               {rows.length === 0 ? (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    autoPrint ? 'โหมดพิมพ์ทันที: ยิงแล้วพิมพ์เลย รายการที่มีปัญหาจะมาค้างที่นี่' : 'ยิง SN ได้เลย แล้วกดพิมพ์ทั้งหมดทีเดียว'
-                  }
+                  description="ยิง SN ได้เลย แล้วกดพิมพ์ทั้งหมดทีเดียว"
                 />
               ) : (
                 <div>
@@ -399,23 +387,63 @@ function SterilizeStation() {
                       onRegister={() => setRegister({ sn: r.sn, rowKey: r.key })}
                       onDispose={() => r.info && setDispose({ unit: r.info.unit, rowKey: r.key })}
                       onReplace={() => r.info && setRegister({ replaces: r.info.unit, rowKey: r.key })}
+                      onChange={(patch) => updateRow(r.key, patch)}
                     />
                   ))}
                 </div>
               )}
               {rows.length > 0 && (
                 <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+                  <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+                    <Text strong style={{ whiteSpace: 'nowrap' }}>
+                      <UserOutlined /> เจ้าหน้าที่ผู้พิมพ์ <Text type="danger">*</Text>
+                    </Text>
+                    <Select
+                      showSearch
+                      allowClear
+                      size="large"
+                      value={currentStaff?.id ?? null}
+                      onChange={(v) => setStaffId(v ?? null)}
+                      placeholder="เลือกหรือพิมพ์ค้นหาชื่อ / รหัส"
+                      optionFilterProp="search"
+                      status={!currentStaff && ready.length ? 'error' : undefined}
+                      style={{ flex: 1, minWidth: 0 }}
+                      options={activeStaff.map((s) => ({
+                        value: s.id,
+                        label: s.code ? `${s.name} (${s.code})` : s.name,
+                        search: `${s.name} ${s.code ?? ''}`,
+                      }))}
+                      notFoundContent={
+                        activeStaff.length ? 'ไม่พบชื่อ' : <Link href="/staff">ยังไม่มีรายชื่อ — เพิ่มที่เมนูรายชื่อเจ้าหน้าที่</Link>
+                      }
+                    />
+                  </Flex>
                   <Button
                     type="primary"
                     size="large"
                     block
                     icon={<PrinterOutlined />}
-                    disabled={!ready.length}
+                    disabled={!ready.length || !currentStaff}
                     onClick={printAll}
                     style={{ height: 56, fontSize: 18 }}
                   >
                     พิมพ์ทั้งหมด {ready.length} ดวง
                   </Button>
+                  {printer.printerName && (
+                    <Text type="secondary" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
+                      <PrinterOutlined /> พิมพ์ออกที่เครื่อง <Text strong>{printer.printerName}</Text> · 50 × 25 มม.
+                    </Text>
+                  )}
+                  {!currentStaff && ready.length > 0 && (
+                    <Text type="danger" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
+                      เลือกเจ้าหน้าที่ผู้พิมพ์ก่อนจึงจะพิมพ์ได้
+                    </Text>
+                  )}
+                  {waitingNote > 0 && (
+                    <Text type="warning" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
+                      มี {waitingNote} ดวงที่พิมพ์ข้ามรอบ — กรอกหมายเหตุก่อนจึงจะพิมพ์ได้
+                    </Text>
+                  )}
                   {problems > 0 && (
                     <Text type="secondary" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
                       รายการที่มีปัญหาจะไม่ถูกพิมพ์ — แก้ไขหรือกด ✕ เอาออก
@@ -452,7 +480,7 @@ function SterilizeStation() {
               extra={
                 <Space size={12}>
                   {focusItem && (
-                    <Tooltip title={`ตั้งค่าของประเภท "${focusItem.name}" — มีผลกับทุกชิ้นของประเภทนี้ (แก้ได้ที่หน้าประเภทอุปกรณ์ด้วย)`}>
+                    <Tooltip title={`ตั้งค่าของรายการ "${focusItem.name}" — มีผลกับทุกชิ้นของรายการนี้ (แก้ได้ที่หน้ารายการอุปกรณ์ด้วย)`}>
                       <Space size={6}>
                         <BarcodeOutlined style={{ color: focusItem.useBarcode ? '#2563eb' : '#94a3b8' }} />
                         <Text type="secondary">บาร์โคด</Text>
@@ -464,6 +492,15 @@ function SterilizeStation() {
                 </Space>
               }
             >
+              {focusRow?.state === 'ok' && (
+                <Flex justify="flex-end" align="center" gap={8} style={{ marginBottom: 12 }}>
+                  <Text type="secondary">วันผลิต</Text>
+                  <MfgPicker value={focusRow.mfg} onChange={(v) => updateRow(focusRow.key, { mfg: v })} width={150} />
+                  <Tooltip title="ตั้งได้แยกทีละดวง (เฉพาะดวงที่เลือกอยู่) · ค่าเริ่มต้นคือวันนี้ · วันหมดอายุคำนวณตามอายุหลัง sterilize ของรายการนั้น">
+                    <QuestionCircleFilled style={{ color: '#cbd5e1' }} />
+                  </Tooltip>
+                </Flex>
+              )}
               <div className="sticker-preview-wrap">
                 <div className="sticker-preview">
                   {preview ? (
@@ -531,7 +568,23 @@ function SterilizeStation() {
         }}
       />
       <ReprintModal open={reprintOpen} onClose={() => (setReprintOpen(false), focusScan())} />
+      <PrinterSettingsModal open={printerOpen} onClose={() => (setPrinterOpen(false), focusScan())} />
     </>
+  );
+}
+
+/** เลือกวันผลิต (เก็บเป็น YYYY-MM-DD แสดงแบบ พ.ศ.) */
+function MfgPicker({ value, onChange, size, width }: { value: string; onChange: (v: string) => void; size?: 'small'; width: number }) {
+  return (
+    <DatePicker
+      size={size}
+      value={dayjs(value)}
+      onChange={(d: Dayjs | null) => d && onChange(d.format(ISO_DATE))}
+      format={THAI_DATE}
+      allowClear={false}
+      suffixIcon={<CalendarOutlined />}
+      style={{ width }}
+    />
   );
 }
 
@@ -544,8 +597,10 @@ function QueueItem({
   onRegister,
   onDispose,
   onReplace,
+  onChange,
 }: {
   row: Resolved;
+  onChange: (patch: Partial<QueueRow>) => void;
   selected: boolean;
   onSelect: () => void;
   onRemove: () => void;
@@ -553,6 +608,7 @@ function QueueItem({
   onDispose: () => void;
   onReplace: () => void;
 }) {
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   const { info } = row;
   const tone = {
     ok: { bg: '#ffffff', icon: <CheckCircleFilled style={{ color: '#16a34a' }} /> },
@@ -561,6 +617,8 @@ function QueueItem({
     disposed: { bg: '#fef2f2', icon: <CloseCircleFilled style={{ color: '#ef4444' }} /> },
     notype: { bg: '#fef2f2', icon: <CloseCircleFilled style={{ color: '#ef4444' }} /> },
   }[row.state];
+  // ข้ามรอบแต่ยังไม่กรอกหมายเหตุ → ไอคอนเตือนสีส้ม (ยังพิมพ์ไม่ได้)
+  if (row.needsNote) tone.icon = <ExclamationCircleFilled style={{ color: '#f59e0b' }} />;
 
   return (
     <Flex
@@ -585,15 +643,53 @@ function QueueItem({
         </Space>
         <div style={{ marginTop: 2 }}>
           {row.state === 'ok' && (
-            <Space size={12} wrap>
-              <Text>
-                พิมพ์ <Text strong style={{ color: row.round === info!.unit.maxRound ? '#d97706' : '#1d4ed8' }}>
-                  รอบ {row.round}/{info!.unit.maxRound}
-                </Text>
-                {row.round === info!.unit.maxRound && <Text type="warning"> (รอบสุดท้าย)</Text>}
-              </Text>
-              <Text type="secondary">หมดอายุ {thaiDate(row.exp)}</Text>
-            </Space>
+            <>
+              <Space size={8} wrap align="center" style={{ marginTop: 2 }}>
+                <Text>พิมพ์รอบ</Text>
+                <span onClick={stop}>
+                  <InputNumber
+                    size="small"
+                    value={row.round}
+                    min={row.natural}
+                    max={info!.unit.maxRound}
+                    precision={0}
+                    step={1}
+                    inputMode="numeric"
+                    // รับเฉพาะตัวเลข — กัน e, E, +, -, . ที่ช่องตัวเลขของเบราว์เซอร์ยอมให้พิมพ์
+                    onKeyDown={(e) => ['e', 'E', '+', '-', '.', ','].includes(e.key) && e.preventDefault()}
+                    parser={(v) => Number((v ?? '').replace(/\D/g, '')) || 0}
+                    onChange={(v) => onChange({ round: typeof v === 'number' ? v : undefined })}
+                    style={{ width: 64, fontWeight: 600, color: row.skipped ? '#d97706' : '#1d4ed8' }}
+                    status={row.skipped ? 'warning' : undefined}
+                  />
+                </span>
+                <Text strong style={{ color: '#1d4ed8' }}>/ {info!.unit.maxRound}</Text>
+                {row.round === info!.unit.maxRound && <Text type="warning">(รอบสุดท้าย)</Text>}
+              </Space>
+              <Space size={8} wrap align="center" style={{ marginTop: 4 }}>
+                <Text>วันผลิต</Text>
+                <span onClick={stop}>
+                  <MfgPicker value={row.mfg} onChange={(v) => onChange({ mfg: v })} size="small" width={130} />
+                </span>
+                <Text type="secondary">หมดอายุ {thaiDate(row.exp)}</Text>
+              </Space>
+              {row.skipped && (
+                <div onClick={stop} style={{ marginTop: 6 }}>
+                  <Text type="warning" style={{ fontSize: 12 }}>
+                    ข้ามจากรอบ {row.natural} ไปรอบ {row.round} — ต้องกรอกหมายเหตุ
+                  </Text>
+                  <Input.TextArea
+                    value={row.note}
+                    onChange={(e) => onChange({ note: e.target.value })}
+                    placeholder="เช่น ใช้งานไปแล้วแต่ไม่ได้บันทึก, พิมพ์ย้อนหลังจากระบบเดิม"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    maxLength={200}
+                    status={row.needsNote ? 'error' : undefined}
+                    style={{ marginTop: 4 }}
+                  />
+                </div>
+              )}
+            </>
           )}
           {row.state === 'notfound' && <Text type="warning">ไม่พบ SN นี้ในระบบ — ลงทะเบียนก่อน</Text>}
           {row.state === 'last' && (
@@ -602,7 +698,7 @@ function QueueItem({
             </Text>
           )}
           {row.state === 'disposed' && <Text type="danger">ชิ้นนี้ถูกทำลายไปแล้ว</Text>}
-          {row.state === 'notype' && <Text type="danger">ประเภทของชิ้นนี้ถูกลบไปแล้ว</Text>}
+          {row.state === 'notype' && <Text type="danger">รายการอุปกรณ์ของชิ้นนี้ถูกลบไปแล้ว</Text>}
         </div>
       </div>
       {row.state === 'ok' && info && (

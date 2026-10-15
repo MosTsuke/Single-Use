@@ -28,16 +28,18 @@ interface FormValues {
   qty: number;
   sn?: string;
   printNow: boolean;
+  staffId?: number;
 }
 
 export default function RegisterUnitModal({ open, onClose, defaultSn, defaultItemId, replaces, onDone, defaultPrintNow = true }: Props) {
-  const { items, findUnitBySn, suggestSns, registerUnits, sterilize } = useStore();
+  const { items, staff, findUnitBySn, suggestSns, registerUnits, sterilize } = useStore();
   const printStickers = usePrintStickers();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
 
   const itemId = Form.useWatch('itemId', form);
   const mode = Form.useWatch('mode', form);
+  const printNow = Form.useWatch('printNow', form);
   const qty = Form.useWatch('qty', form) ?? 1;
   const item = items.find((i) => i.id === itemId);
   const preview = item && mode === 'auto' ? suggestSns(item.id, Math.min(qty, 50)) : [];
@@ -55,7 +57,8 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
   }, [open, defaultSn, defaultItemId, replaces, defaultPrintNow, form]);
 
   const onOk = async () => {
-    const v = await form.validateFields();
+    const v = await form.validateFields().catch(() => null);
+    if (!v) return; // ฟอร์มยังไม่ครบ — antd แสดงข้อความเตือนในช่องแล้ว
     if (!item) return;
     const sns = v.mode === 'auto' ? suggestSns(item.id, v.qty) : [v.sn!.trim()];
     const res = registerUnits({ itemId: item.id, sns, manufacturerSn: v.mode === 'manufacturer', replacesSn: replaces?.sn });
@@ -66,7 +69,7 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
     if (v.printNow) {
       const mfg = todayISO();
       const exp = addDays(mfg, item.shelf);
-      const logs = res.value.map((u) => sterilize(u.id, mfg, exp)).flatMap((r) => (r.ok ? [r.value] : []));
+      const logs = res.value.map((u) => sterilize(u.id, mfg, exp, { staffId: v.staffId! })).flatMap((r) => (r.ok ? [r.value] : []));
       printStickers(logs);
     }
     message.success(
@@ -79,6 +82,8 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
   return (
     <Modal
       open={open}
+      // เปิดได้จากในหน้าต่างประวัติ (Drawer) — ต้องอยู่ชั้นบนกว่า Drawer เสมอ
+      zIndex={1100}
       onCancel={onClose}
       onOk={onOk}
       okText={'ลงทะเบียน'}
@@ -105,11 +110,11 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
         />
       )}
       <Form<FormValues> form={form} layout="vertical" requiredMark={false}>
-        <Form.Item name="itemId" label="ประเภทอุปกรณ์" rules={[{ required: true, message: 'เลือกประเภทอุปกรณ์' }]}>
+        <Form.Item name="itemId" label="รายการอุปกรณ์" rules={[{ required: true, message: 'เลือกรายการอุปกรณ์' }]}>
           <Select
             showSearch
             optionFilterProp="label"
-            placeholder="เลือกประเภท"
+            placeholder="เลือกรายการอุปกรณ์"
             disabled={!!replaces}
             options={items.map((i) => ({ value: i.id, label: i.name }))}
           />
@@ -153,7 +158,7 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
               <Form.Item label="SN ที่จะได้">
                 <Flex wrap gap={4} style={{ minHeight: 32, alignItems: 'center' }}>
                   {!item ? (
-                    <Typography.Text type="secondary">เลือกประเภทก่อน</Typography.Text>
+                    <Typography.Text type="secondary">เลือกรายการอุปกรณ์ก่อน</Typography.Text>
                   ) : (
                     <>
                       {preview.slice(0, 4).map((s) => (
@@ -179,6 +184,24 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
         <Form.Item name="printNow" valuePropName="checked" style={{ marginBottom: 0 }}>
           <Checkbox>Sterilize แล้ว — พิมพ์สติ๊กเกอร์รอบที่ 1 ทันที (วันที่วันนี้)</Checkbox>
         </Form.Item>
+        {printNow && (
+          <Form.Item
+            name="staffId"
+            label="เจ้าหน้าที่ผู้พิมพ์"
+            style={{ marginTop: 12, marginBottom: 0 }}
+            rules={[{ required: true, message: 'กรุณาเลือกเจ้าหน้าที่ผู้พิมพ์' }]}
+          >
+            <Select
+              showSearch
+              placeholder="เลือกหรือพิมพ์ค้นหาชื่อ / รหัส"
+              optionFilterProp="search"
+              notFoundContent={staff.some((s) => s.active) ? 'ไม่พบชื่อ' : 'ยังไม่มีรายชื่อ — เพิ่มที่เมนูรายชื่อเจ้าหน้าที่'}
+              options={staff
+                .filter((s) => s.active)
+                .map((s) => ({ value: s.id, label: s.code ? `${s.name} (${s.code})` : s.name, search: `${s.name} ${s.code ?? ''}` }))}
+            />
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   );

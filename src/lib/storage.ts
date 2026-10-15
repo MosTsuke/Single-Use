@@ -1,4 +1,4 @@
-import type { AppData, MasterItem, PrintLog, Unit } from './types';
+import type { AppData, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
  * ชั้นจัดเก็บข้อมูล — ตอนนี้ใช้ localStorage ของเบราว์เซอร์
@@ -13,6 +13,7 @@ export interface DataStorage {
 const KEY_ITEMS = 'sticker_masterItems';
 const KEY_UNITS = 'sticker_units';
 const KEY_LOGS = 'sticker_printLogs';
+const KEY_STAFF = 'sticker_staff';
 
 export const DEFAULT_ITEMS: MasterItem[] = [
   { id: 1, name: 'สาย Suction', shelf: 61, maxRound: 4, useBarcode: true, snPrefix: 'SUC' },
@@ -53,11 +54,15 @@ export function normalizeLog(raw: Partial<PrintLog> & Record<string, unknown>): 
     maxRound: Number(raw.maxRound) || 1,
     isReprint: !!raw.isReprint,
     sourceId: raw.sourceId != null ? Number(raw.sourceId) : undefined,
+    skippedFrom: raw.skippedFrom != null ? Number(raw.skippedFrom) : undefined,
+    note: raw.note ? String(raw.note) : undefined,
+    staffId: raw.staffId != null ? Number(raw.staffId) : undefined,
+    staffName: raw.staffName ? String(raw.staffName) : undefined,
     time: String(raw.time ?? ''),
   };
 }
 
-export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: unknown }): AppData {
+export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: unknown; staff?: unknown }): AppData {
   const items: MasterItem[] = Array.isArray(raw.items)
     ? (raw.items as Partial<MasterItem>[]).map((i) => ({
         id: Number(i.id),
@@ -83,7 +88,17 @@ export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: un
       }))
     : [];
   const logs = Array.isArray(raw.logs) ? (raw.logs as PrintLog[]).map((l) => normalizeLog(l as never)) : [];
-  return { items, units, logs };
+  const staff: Staff[] = Array.isArray(raw.staff)
+    ? (raw.staff as Partial<Staff>[])
+        .map((s) => ({
+          id: Number(s.id),
+          name: String(s.name ?? '').trim(),
+          code: s.code ? String(s.code).trim() : undefined,
+          active: s.active !== false,
+        }))
+        .filter((s) => s.name)
+    : [];
+  return { items, units, logs, staff };
 }
 
 class LocalStorageDataStorage implements DataStorage {
@@ -92,6 +107,7 @@ class LocalStorageDataStorage implements DataStorage {
       items: readJSON<MasterItem[]>(KEY_ITEMS) ?? undefined,
       units: readJSON<Unit[]>(KEY_UNITS) ?? [],
       logs: readJSON<PrintLog[]>(KEY_LOGS) ?? [],
+      staff: readJSON<Staff[]>(KEY_STAFF) ?? [],
     });
   }
 
@@ -99,6 +115,7 @@ class LocalStorageDataStorage implements DataStorage {
     window.localStorage.setItem(KEY_ITEMS, JSON.stringify(data.items));
     window.localStorage.setItem(KEY_UNITS, JSON.stringify(data.units));
     window.localStorage.setItem(KEY_LOGS, JSON.stringify(data.logs));
+    window.localStorage.setItem(KEY_STAFF, JSON.stringify(data.staff));
   }
 }
 

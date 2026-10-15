@@ -9,6 +9,7 @@ import {
   MenuUnfoldOutlined,
   PrinterOutlined,
   TagsOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Flex, Grid, Layout, Menu, Spin, Typography } from 'antd';
 import Link from 'next/link';
@@ -20,10 +21,11 @@ import { useStore } from '@/lib/store';
 const { Sider, Header, Content } = Layout;
 
 const NAV = [
-  { key: '/print', icon: <PrinterOutlined />, label: 'Sterilize & พิมพ์', desc: 'ยิง SN ของอุปกรณ์ที่ sterilize เสร็จ แล้วพิมพ์สติ๊กเกอร์รอบถัดไป' },
+  { key: '/print', icon: <PrinterOutlined />, label: 'พิมพ์สติ๊กเกอร์', desc: 'ยิง SN ของอุปกรณ์ที่ sterilize เสร็จ แล้วพิมพ์สติ๊กเกอร์รอบถัดไป' },
   { key: '/units', icon: <BarcodeOutlined />, label: 'อุปกรณ์รายชิ้น (SN)', desc: 'ติดตามแต่ละชิ้น ใช้ไปกี่รอบ ครบอายุหรือยัง' },
   { key: '/reports', icon: <BarChartOutlined />, label: 'รายงาน Single-Use', desc: 'ประวัติการพิมพ์ทั้งหมด กรองตามช่วงเวลา' },
-  { key: '/items', icon: <DatabaseOutlined />, label: 'ประเภทอุปกรณ์', desc: 'ตั้งค่าอายุหลัง sterilize รอบสูงสุด และคำนำหน้า SN' },
+  { key: '/items', icon: <DatabaseOutlined />, label: 'รายการอุปกรณ์', desc: 'ตั้งค่าอายุหลัง sterilize รอบสูงสุด และคำนำหน้า SN' },
+  { key: '/staff', icon: <TeamOutlined />, label: 'รายชื่อเจ้าหน้าที่', desc: 'รายชื่อผู้พิมพ์สติ๊กเกอร์ ใช้เลือกก่อนพิมพ์และแสดงบนสติ๊กเกอร์' },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {

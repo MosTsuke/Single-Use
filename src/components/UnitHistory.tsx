@@ -37,14 +37,30 @@ export default function UnitHistory({ unit }: { unit: Unit }) {
       icon: l.isReprint ? <RedoOutlined /> : <CheckCircleFilled />,
       node: (
         <>
-          <Text strong>{l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'Sterilize & พิมพ์'}</Text>{' '}
+          <Text strong>{l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์สติ๊กเกอร์'}</Text>{' '}
           <Tag color={l.isReprint ? 'warning' : 'blue'} style={{ marginLeft: 4 }}>
             รอบ {l.round}/{l.maxRound}
           </Tag>
           <br />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {thaiDateTime(l.time)} · หมดอายุ {thaiDate(l.exp)}
+            พิมพ์เมื่อ {thaiDateTime(l.time)}
+            {l.staffName && <> · โดย {l.staffName}</>}
           </Text>
+          <br />
+          <Text style={{ fontSize: 12 }}>
+            วันผลิต <Text strong style={{ fontSize: 12 }}>{thaiDate(l.mfg)}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}> · </Text>
+            หมดอายุ <Text strong style={{ fontSize: 12 }}>{thaiDate(l.exp)}</Text>
+          </Text>
+          {l.skippedFrom != null && (
+            <>
+              <br />
+              <Text type="warning" style={{ fontSize: 12 }}>
+                ข้ามจากรอบ {l.skippedFrom} → {l.round}
+                {l.note && <> · {l.note}</>}
+              </Text>
+            </>
+          )}
         </>
       ),
     })),

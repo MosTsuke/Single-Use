@@ -35,6 +35,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { todayISO } from '@/lib/date';
+import Link from 'next/link';
+import ItemUnitsPanel from '@/components/ItemUnitsPanel';
 import { buildDemoData } from '@/lib/demo';
 import { cleanPrefix, normalizeData } from '@/lib/storage';
 import { useStore } from '@/lib/store';
@@ -44,12 +46,15 @@ type ItemForm = Omit<MasterItem, 'id'>;
 const { Text } = Typography;
 
 export default function ItemsPage() {
-  const { items, units, logs, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
+  const { items, units, logs, staff, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
   const { message, modal } = App.useApp();
   const [form] = Form.useForm<ItemForm>();
   const [editing, setEditing] = useState<MasterItem | null>(null);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [expanded, setExpanded] = useState<number[]>([]);
+  const toggle = (id: number) =>
+    setExpanded((ks) => (ks.includes(id) ? ks.filter((k) => k !== id) : [...ks, id]));
 
   // จำนวนชิ้นแยกตามสถานะ ต่อประเภท
   const usage = useMemo(() => {
@@ -83,20 +88,21 @@ export default function ItemsPage() {
   };
 
   const onSave = async () => {
-    const v = await form.validateFields();
+    const v = await form.validateFields().catch(() => null);
+    if (!v) return; // ฟอร์มยังไม่ครบ — antd แสดงข้อความเตือนในช่องแล้ว
     const data = { ...v, name: v.name.trim(), snPrefix: cleanPrefix(v.snPrefix) };
     if (editing) {
       updateItem(editing.id, data);
       message.success('บันทึกการแก้ไขแล้ว');
     } else {
       addItem(data);
-      message.success('เพิ่มประเภทอุปกรณ์แล้ว');
+      message.success('เพิ่มรายการอุปกรณ์แล้ว');
     }
     setOpen(false);
   };
 
   const exportBackup = () => {
-    const blob = new Blob([JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), items, units, logs }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), items, units, logs, staff }, null, 2)], {
       type: 'application/json',
     });
     const a = document.createElement('a');
@@ -115,7 +121,7 @@ export default function ItemsPage() {
         const data = normalizeData(raw);
         modal.confirm({
           title: 'นำเข้าข้อมูลสำรอง',
-          content: `พบ ${data.items.length} ประเภท, อุปกรณ์ ${data.units.length} ชิ้น และประวัติการพิมพ์ ${data.logs.length} ดวง — ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด`,
+          content: `พบ ${data.items.length} รายการ, อุปกรณ์ ${data.units.length} ชิ้น , ประวัติการพิมพ์ ${data.logs.length} ดวง และเจ้าหน้าที่ ${data.staff.length} คน — ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด`,
           okText: 'นำเข้าและแทนที่',
           okButtonProps: { danger: true },
           cancelText: 'ยกเลิก',
@@ -134,7 +140,7 @@ export default function ItemsPage() {
       title: 'โหลดข้อมูลตัวอย่าง',
       icon: <ExperimentOutlined style={{ color: '#7c3aed' }} />,
       content:
-        'จำลองอุปกรณ์ 6 ประเภท พร้อมประวัติ sterilize ย้อนหลังประมาณ 5 เดือน ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด (กดสำรองข้อมูลก่อนได้)',
+        'จำลองอุปกรณ์ 6 รายการ พร้อมประวัติ sterilize ย้อนหลังประมาณ 5 เดือน ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด (กดสำรองข้อมูลก่อนได้)',
       okText: 'โหลดข้อมูลตัวอย่าง',
       cancelText: 'ยกเลิก',
       onOk: () => {
@@ -147,11 +153,15 @@ export default function ItemsPage() {
 
   const columns: ColumnsType<MasterItem> = [
     {
-      title: 'ประเภทอุปกรณ์',
+      title: 'รายการอุปกรณ์',
       dataIndex: 'name',
       width: 200,
       sorter: (a, b) => a.name.localeCompare(b.name, 'th'),
-      render: (v: string) => <Text strong>{v}</Text>,
+      render: (v: string, r) => (
+        <a onClick={() => toggle(r.id)}>
+          <Text strong>{v}</Text>
+        </a>
+      ),
     },
     {
       title: 'อายุหลัง sterilize',
@@ -183,7 +193,7 @@ export default function ItemsPage() {
     {
       title: 'คำนำหน้า SN',
       dataIndex: 'snPrefix',
-      width: 130,
+      width: 150,
       render: (v: string) => <Text code>{v}-000001</Text>,
     },
     {
@@ -194,7 +204,11 @@ export default function ItemsPage() {
       ),
       width: 100,
       align: 'right',
-      render: (_, r) => <Text strong style={{ color: '#16a34a' }}>{usage.get(r.id)?.ready ?? 0}</Text>,
+      render: (_, r) => (
+        <Link href={`/units?item=${r.id}&status=usable`}>
+          <Text strong style={{ color: '#16a34a' }}>{usage.get(r.id)?.ready ?? 0}</Text>
+        </Link>
+      ),
     },
     {
       title: (
@@ -206,14 +220,24 @@ export default function ItemsPage() {
       align: 'right',
       render: (_, r) => {
         const n = usage.get(r.id)?.last ?? 0;
-        return <Text strong={n > 0} type={n > 0 ? 'danger' : 'secondary'}>{n}</Text>;
+        return (
+          <Link href={`/units?item=${r.id}&status=last`}>
+            <Text strong={n > 0} type={n > 0 ? 'danger' : 'secondary'}>
+              {n}
+            </Text>
+          </Link>
+        );
       },
     },
     {
       title: 'ทำลายแล้ว',
       width: 100,
       align: 'right',
-      render: (_, r) => <Text type="secondary">{usage.get(r.id)?.disposed ?? 0}</Text>,
+      render: (_, r) => (
+        <Link href={`/units?item=${r.id}&status=disposed`}>
+          <Text type="secondary">{usage.get(r.id)?.disposed ?? 0}</Text>
+        </Link>
+      ),
     },
     {
       title: 'จัดการ',
@@ -225,7 +249,7 @@ export default function ItemsPage() {
             <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(r)} />
           </Tooltip>
           <Popconfirm
-            title="ลบประเภทนี้?"
+            title="ลบรายการนี้?"
             description="ลบได้เมื่อไม่มีอุปกรณ์ที่ยังใช้งานอยู่ ประวัติเดิมยังอยู่ในรายงาน"
             okText="ลบ"
             cancelText="ยกเลิก"
@@ -248,34 +272,42 @@ export default function ItemsPage() {
   return (
     <Flex vertical gap={20}>
       <Card
-        title={`ประเภทอุปกรณ์ทั้งหมด (${items.length})`}
+        title={`รายการอุปกรณ์ทั้งหมด (${items.length})`}
         extra={
           <Flex gap={8} wrap>
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="ค้นหาประเภท"
+              placeholder="ค้นหารายการ"
               style={{ width: 200 }}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
             <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-              เพิ่มประเภทอุปกรณ์
+              เพิ่มรายการอุปกรณ์
             </Button>
           </Flex>
         }
       >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+          กด <b>+</b> หน้าแถว หรือกดชื่ออุปกรณ์ เพื่อดูอุปกรณ์แต่ละชิ้น (SN) · กดตัวเลขเพื่อเปิดในหน้าอุปกรณ์รายชิ้น
+        </Text>
         <Table
           rowKey="id"
           columns={columns}
           dataSource={rows}
           scroll={{ x: 1100 }}
+          expandable={{
+            expandedRowKeys: expanded,
+            onExpand: (_, r) => toggle(r.id),
+            expandedRowRender: (r) => <ItemUnitsPanel item={r} />,
+          }}
           pagination={{ pageSize: 20, hideOnSinglePage: true }}
           locale={{
             emptyText: (
               <Empty description="ยังไม่มีรายการ">
                 <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-                  เพิ่มประเภทแรก
+                  เพิ่มรายการแรก
                 </Button>
               </Empty>
             ),
@@ -305,7 +337,7 @@ export default function ItemsPage() {
 
       <Modal
         open={open}
-        title={editing ? 'แก้ไขประเภทอุปกรณ์' : 'เพิ่มประเภทอุปกรณ์'}
+        title={editing ? 'แก้ไขรายการอุปกรณ์' : 'เพิ่มรายการอุปกรณ์'}
         okText="บันทึก"
         cancelText="ยกเลิก"
         onOk={onSave}
@@ -315,7 +347,7 @@ export default function ItemsPage() {
         <Form<ItemForm> form={form} layout="vertical" requiredMark={false} style={{ marginTop: 16 }}>
           <Form.Item
             name="name"
-            label="ชื่อประเภทอุปกรณ์"
+            label="ชื่ออุปกรณ์"
             rules={[
               { required: true, whitespace: true, message: 'กรุณากรอกชื่อ' },
               {
@@ -338,7 +370,7 @@ export default function ItemsPage() {
               {
                 validator: (_, v: string) =>
                   items.some((i) => i.snPrefix === v && i.id !== editing?.id)
-                    ? Promise.reject(new Error('คำนำหน้านี้ถูกใช้กับประเภทอื่นแล้ว'))
+                    ? Promise.reject(new Error('คำนำหน้านี้ถูกใช้กับรายการอื่นแล้ว'))
                     : Promise.resolve(),
               },
             ]}

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { nowStamp } from './date';
 import { storage } from './storage';
-import type { AppData, DisposeReason, MasterItem, PrintLog, Unit, UnitStatus } from './types';
+import type { AppData, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
 import { cyclesUsed, generateSns, normSn, unitStatus } from './units';
 
 export interface UnitInfo {
@@ -23,6 +23,7 @@ interface StoreValue {
   items: MasterItem[];
   units: Unit[];
   logs: PrintLog[];
+  staff: Staff[];
   saveError: string | null;
 
   getUnitInfo: (unit: Unit) => UnitInfo;
@@ -33,10 +34,19 @@ interface StoreValue {
   updateItem: (id: number, data: Omit<MasterItem, 'id'>) => void;
   deleteItem: (id: number) => Result<void>;
 
+  addStaff: (data: Omit<Staff, 'id'>) => Result<Staff>;
+  updateStaff: (id: number, data: Omit<Staff, 'id'>) => Result<Staff>;
+  /** ลบได้เฉพาะคนที่ยังไม่เคยพิมพ์ — ถ้าเคยพิมพ์แล้วให้ปิดใช้งานแทน */
+  deleteStaff: (id: number) => Result<void>;
+
   registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => Result<Unit[]>;
   disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => Result<Unit>;
-  /** sterilize เสร็จ → บันทึกรอบใหม่และคืนข้อมูลสำหรับพิมพ์ */
-  sterilize: (unitId: number, mfg: string, exp: string) => Result<PrintLog>;
+  /**
+   * sterilize เสร็จ → บันทึกรอบใหม่และคืนข้อมูลสำหรับพิมพ์
+   * opts.round = พิมพ์ข้ามไปรอบที่ระบุ (ต้อง ≥ รอบถัดไป และ ≤ รอบสูงสุด) ต้องมี opts.note
+   * staffId = เจ้าหน้าที่ผู้พิมพ์ (บังคับ)
+   */
+  sterilize: (unitId: number, mfg: string, exp: string, opts: { staffId: number; round?: number; note?: string }) => Result<PrintLog>;
   /** พิมพ์ซ้ำดวงเดิม — override.useBarcode ใช้กับดวงนี้ดวงเดียว */
   createReprint: (logId: number, override?: { useBarcode?: boolean }) => PrintLog | null;
   replaceAll: (data: AppData) => void;
@@ -67,7 +77,7 @@ function buildInfo(d: AppData, unit: Unit): UnitInfo {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>({ items: [], units: [], logs: [] });
+  const [data, setData] = useState<AppData>({ items: [], units: [], logs: [], staff: [] });
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // ค่าล่าสุดเสมอ ให้ action อ่าน/คืนค่าได้ทันทีโดยไม่รอ re-render
@@ -127,8 +137,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (id: number): Result<void> => {
       const cur = ref.current;
       const live = cur.units.filter((u) => u.itemId === id && !u.disposedAt).length;
-      if (live) return { ok: false, error: `ยังมีอุปกรณ์ประเภทนี้ที่ยังไม่ถูกทำลาย ${live} ชิ้น` };
+      if (live) return { ok: false, error: `ยังมีอุปกรณ์ของรายการนี้ที่ยังไม่ถูกทำลาย ${live} ชิ้น` };
       commit({ ...cur, items: cur.items.filter((i) => i.id !== id) });
+      return { ok: true, value: undefined };
+    },
+    [commit],
+  );
+
+  const staffNameTaken = (list: Staff[], name: string, exceptId?: number) =>
+    list.some((s) => s.id !== exceptId && s.name.replace(/\s+/g, ' ').toLowerCase() === name.replace(/\s+/g, ' ').toLowerCase());
+
+  const addStaff = useCallback<StoreValue['addStaff']>(
+    (d) => {
+      const cur = ref.current;
+      const name = d.name.trim();
+      if (!name) return { ok: false, error: 'กรุณากรอกชื่อ' };
+      if (staffNameTaken(cur.staff, name)) return { ok: false, error: `มีชื่อ "${name}" อยู่แล้ว` };
+      const s: Staff = { id: nextId(cur.staff), name, code: d.code?.trim() || undefined, active: d.active };
+      commit({ ...cur, staff: [...cur.staff, s] });
+      return { ok: true, value: s };
+    },
+    [commit],
+  );
+
+  const updateStaff = useCallback<StoreValue['updateStaff']>(
+    (id, d) => {
+      const cur = ref.current;
+      const name = d.name.trim();
+      if (!name) return { ok: false, error: 'กรุณากรอกชื่อ' };
+      if (staffNameTaken(cur.staff, name, id)) return { ok: false, error: `มีชื่อ "${name}" อยู่แล้ว` };
+      const s: Staff = { id, name, code: d.code?.trim() || undefined, active: d.active };
+      commit({ ...cur, staff: cur.staff.map((x) => (x.id === id ? s : x)) });
+      return { ok: true, value: s };
+    },
+    [commit],
+  );
+
+  const deleteStaff = useCallback<StoreValue['deleteStaff']>(
+    (id) => {
+      const cur = ref.current;
+      const used = cur.logs.filter((l) => l.staffId === id).length;
+      if (used) return { ok: false, error: `เจ้าหน้าที่คนนี้มีประวัติการพิมพ์ ${used} ดวง — ลบไม่ได้ ให้ปิดใช้งานแทน` };
+      commit({ ...cur, staff: cur.staff.filter((s) => s.id !== id) });
       return { ok: true, value: undefined };
     },
     [commit],
@@ -138,7 +188,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ({ itemId, sns, manufacturerSn, replacesSn }) => {
       const cur = ref.current;
       const item = cur.items.find((i) => i.id === itemId);
-      if (!item) return { ok: false, error: 'ไม่พบประเภทอุปกรณ์' };
+      if (!item) return { ok: false, error: 'ไม่พบรายการอุปกรณ์' };
       const cleaned = sns.map((s) => s.trim()).filter(Boolean);
       if (!cleaned.length) return { ok: false, error: 'กรุณาระบุ SN' };
       const seen = new Set(cur.units.map((u) => normSn(u.sn)));
@@ -182,7 +232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const sterilize = useCallback<StoreValue['sterilize']>(
-    (unitId, mfg, exp) => {
+    (unitId, mfg, exp, opts) => {
       const cur = ref.current;
       const u = cur.units.find((x) => x.id === unitId);
       if (!u) return { ok: false, error: 'ไม่พบอุปกรณ์' };
@@ -194,18 +244,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         };
       }
       const item = info.item;
+      const round = opts?.round ?? info.nextRound;
+      if (!Number.isInteger(round) || round < info.nextRound || round > u.maxRound) {
+        return { ok: false, error: `รอบต้องอยู่ระหว่าง ${info.nextRound} ถึง ${u.maxRound}` };
+      }
+      const staff = cur.staff.find((s) => s.id === opts.staffId);
+      if (!staff) return { ok: false, error: 'กรุณาเลือกเจ้าหน้าที่ผู้พิมพ์' };
+      const skipped = round > info.nextRound;
+      const note = opts?.note?.trim();
+      if (skipped && !note) return { ok: false, error: 'พิมพ์ข้ามรอบต้องกรอกหมายเหตุ' };
       const log: PrintLog = {
         id: nextId(cur.logs),
         unitId: u.id,
         itemId: u.itemId,
-        name: item?.name ?? '(ประเภทถูกลบ)',
+        name: item?.name ?? '(รายการถูกลบ)',
         useBarcode: item?.useBarcode ?? true,
         barcode: u.sn,
         mfg,
         exp,
-        round: info.nextRound,
+        round,
         maxRound: u.maxRound,
         isReprint: false,
+        skippedFrom: skipped ? info.nextRound : undefined,
+        note: note || undefined,
+        staffId: staff.id,
+        staffName: staff.name,
         time: nowStamp(),
       };
       commit({ ...cur, logs: [...cur.logs, log] });
@@ -241,6 +304,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       items: data.items,
       units: data.units,
       logs: data.logs,
+      staff: data.staff,
       saveError,
       getUnitInfo,
       findUnitBySn,
@@ -248,13 +312,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addItem,
       updateItem,
       deleteItem,
+      addStaff,
+      updateStaff,
+      deleteStaff,
       registerUnits,
       disposeUnit,
       sterilize,
       createReprint,
       replaceAll,
     }),
-    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, registerUnits, disposeUnit, sterilize, createReprint, replaceAll],
+    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

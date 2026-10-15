@@ -75,7 +75,7 @@ function rangeOf(period: Period, ref: Dayjs): { start: string; end: string; labe
 }
 
 function downloadCSV(rows: PrintLog[], filename: string) {
-  const head = ['วัน-เวลาที่พิมพ์', 'ประเภทอุปกรณ์', 'รอบ', 'รอบสูงสุด', 'วันผลิต', 'วันหมดอายุ', 'SN', 'สถานะ'];
+  const head = ['วัน-เวลาที่พิมพ์', 'รายการอุปกรณ์', 'รอบ', 'รอบสูงสุด', 'วันผลิต', 'วันหมดอายุ', 'SN', 'สถานะ', 'เจ้าหน้าที่', 'หมายเหตุ'];
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = rows.map((l) =>
     [
@@ -87,6 +87,8 @@ function downloadCSV(rows: PrintLog[], filename: string) {
       thaiDate(l.exp),
       l.barcode ? `\t${l.barcode}` : '-',
       l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์ปกติ',
+      l.staffName ?? '',
+      l.skippedFrom != null ? `ข้ามจากรอบ ${l.skippedFrom}${l.note ? ' · ' + l.note : ''}` : (l.note ?? ''),
     ]
       .map(esc)
       .join(','),
@@ -129,7 +131,7 @@ export default function ReportsPage() {
         if (itemFilter && l.itemId !== itemFilter) return false;
         if (status === 'normal' && l.isReprint) return false;
         if (status === 'reprint' && !l.isReprint) return false;
-        if (kw && !l.name.toLowerCase().includes(kw) && !l.barcode.toLowerCase().includes(kw)) return false;
+        if (kw && ![l.name, l.barcode, l.staffName ?? ''].some((v) => v.toLowerCase().includes(kw))) return false;
         return true;
       })
       .slice()
@@ -162,7 +164,7 @@ export default function ReportsPage() {
       render: (v: string) => <Text type="secondary">{thaiDateTime(v)}</Text>,
     },
     {
-      title: 'ประเภทอุปกรณ์',
+      title: 'รายการอุปกรณ์',
       dataIndex: 'name',
       ellipsis: true,
       render: (v: string) => <Text strong>{v}</Text>,
@@ -202,6 +204,13 @@ export default function ReportsPage() {
         ) : (
           <Text type="secondary">—</Text>
         ),
+    },
+    {
+      title: 'เจ้าหน้าที่',
+      dataIndex: 'staffName',
+      width: 160,
+      ellipsis: true,
+      render: (v?: string) => (v ? v : <Text type="secondary">—</Text>),
     },
     {
       title: 'สถานะ',
@@ -316,7 +325,7 @@ export default function ReportsPage() {
                 <Input
                   allowClear
                   prefix={<SearchOutlined />}
-                  placeholder="ค้นหาชื่อ / SN"
+                  placeholder="ค้นหาชื่อ / SN / เจ้าหน้าที่"
                   style={{ width: 200 }}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
@@ -328,7 +337,7 @@ export default function ReportsPage() {
               rowKey="id"
               columns={columns}
               dataSource={filtered}
-              scroll={{ x: 1000 }}
+              scroll={{ x: 1160 }}
               pagination={{ pageSize: 15, showSizeChanger: true, showTotal: (t) => `ทั้งหมด ${t} รายการ` }}
               locale={{ emptyText: <Empty description="ไม่มีข้อมูลในช่วงเวลานี้" /> }}
             />

@@ -2,10 +2,13 @@ import type { MasterItem, PrintLog, Unit, UnitStatus } from './types';
 
 export const normSn = (sn: string) => sn.trim().toUpperCase();
 
-/** จำนวนรอบที่ใช้ไปแล้ว = จำนวนครั้งที่พิมพ์ปกติ (ไม่นับพิมพ์ซ้ำ) */
+/**
+ * จำนวนรอบที่ใช้ไปแล้ว = รอบสูงสุดที่เคยพิมพ์ปกติ (ไม่นับพิมพ์ซ้ำ)
+ * ใช้รอบสูงสุดแทนการนับครั้ง เพราะหน้างานพิมพ์ข้ามรอบได้ (มีหมายเหตุกำกับ)
+ */
 export function cyclesUsed(logs: PrintLog[], unitId: number): number {
   let n = 0;
-  for (const l of logs) if (l.unitId === unitId && !l.isReprint) n++;
+  for (const l of logs) if (l.unitId === unitId && !l.isReprint && l.round > n) n = l.round;
   return n;
 }
 
