@@ -195,7 +195,7 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
               showSearch
               placeholder="เลือกหรือพิมพ์ค้นหาชื่อ / รหัส"
               optionFilterProp="search"
-              notFoundContent={staff.some((s) => s.active) ? 'ไม่พบชื่อ' : 'ยังไม่มีรายชื่อ — เพิ่มที่เมนูรายชื่อเจ้าหน้าที่'}
+              notFoundContent={staff.some((s) => s.active) ? 'ไม่พบชื่อ' : 'ยังไม่มีรายชื่อ — ให้แอดมินเพิ่มที่เมนูรายชื่อเจ้าหน้าที่'}
               options={staff
                 .filter((s) => s.active)
                 .map((s) => ({ value: s.id, label: s.code ? `${s.name} (${s.code})` : s.name, search: `${s.name} ${s.code ?? ''}` }))}

@@ -414,7 +414,7 @@ function SterilizeStation() {
                         search: `${s.name} ${s.code ?? ''}`,
                       }))}
                       notFoundContent={
-                        activeStaff.length ? 'ไม่พบชื่อ' : <Link href="/staff">ยังไม่มีรายชื่อ — เพิ่มที่เมนูรายชื่อเจ้าหน้าที่</Link>
+                        activeStaff.length ? 'ไม่พบชื่อ' : <Link href="/staff">ยังไม่มีรายชื่อ — ให้แอดมินเพิ่มที่เมนูรายชื่อเจ้าหน้าที่</Link>
                       }
                     />
                   </Flex>
