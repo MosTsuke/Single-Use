@@ -50,6 +50,8 @@ interface StoreValue {
   /** พิมพ์ซ้ำดวงเดิม — override.useBarcode ใช้กับดวงนี้ดวงเดียว */
   createReprint: (logId: number, override?: { useBarcode?: boolean }) => PrintLog | null;
   replaceAll: (data: AppData) => void;
+  /** ย้อนการพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์) — ลบได้เฉพาะดวงล่าสุดของชิ้นนั้น */
+  removeLogs: (ids: number[]) => Result<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -298,6 +300,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const replaceAll = useCallback((d: AppData) => commit(d), [commit]);
 
+  const removeLogs = useCallback<StoreValue['removeLogs']>(
+    (ids) => {
+      const cur = ref.current;
+      const del = new Set(ids);
+      for (const id of ids) {
+        const l = cur.logs.find((x) => x.id === id);
+        if (!l) continue;
+        // มีการพิมพ์ของชิ้นนี้ต่อจากดวงนี้แล้ว → ย้อนไม่ได้ (กันรอบเพี้ยน)
+        const later = cur.logs.some((x) => !del.has(x.id) && x.id > l.id && (x.unitId === l.unitId || x.sourceId === l.id));
+        if (later) return { ok: false, error: `${l.barcode} มีการพิมพ์ต่อจากนี้แล้ว — ย้อนกลับไม่ได้` };
+      }
+      commit({ ...cur, logs: cur.logs.filter((x) => !del.has(x.id)) });
+      return { ok: true, value: undefined };
+    },
+    [commit],
+  );
+
   const value = useMemo<StoreValue>(
     () => ({
       ready,
@@ -320,8 +339,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       sterilize,
       createReprint,
       replaceAll,
+      removeLogs,
     }),
-    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll],
+    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

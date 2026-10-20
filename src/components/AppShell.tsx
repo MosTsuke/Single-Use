@@ -4,6 +4,7 @@ import {
   BarChartOutlined,
   BarcodeOutlined,
   CalendarOutlined,
+  DashboardOutlined,
   DatabaseOutlined,
   LoginOutlined,
   LogoutOutlined,
@@ -27,6 +28,7 @@ const { Sider, Header, Content } = Layout;
 
 const NAV = [
   { key: '/print', icon: <PrinterOutlined />, label: 'พิมพ์สติ๊กเกอร์', desc: 'ยิง SN ของอุปกรณ์ที่ sterilize เสร็จ แล้วพิมพ์สติ๊กเกอร์รอบถัดไป' },
+  { key: '/dashboard', icon: <DashboardOutlined />, label: 'แดชบอร์ด', desc: 'ภาพรวม: พร้อมใช้ / รอทำลาย / สติ๊กเกอร์หมดอายุ และสาเหตุการทำลาย' },
   { key: '/units', icon: <BarcodeOutlined />, label: 'อุปกรณ์รายชิ้น (SN)', desc: 'ติดตามแต่ละชิ้น ใช้ไปกี่รอบ ครบอายุหรือยัง' },
   { key: '/reports', icon: <BarChartOutlined />, label: 'รายงาน Single-Use', desc: 'ประวัติการพิมพ์ทั้งหมด กรองตามช่วงเวลา' },
 ];

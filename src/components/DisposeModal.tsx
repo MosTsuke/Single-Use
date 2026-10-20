@@ -11,6 +11,8 @@ interface Props {
   onClose: () => void;
   /** เรียกหลังทำลายสำเร็จ — replace = ผู้ใช้ต้องการลงทะเบียนชิ้นใหม่ทดแทน */
   onDisposed?: (unit: Unit, replace: boolean) => void;
+  /** ค่าเริ่มต้นของ "ลงทะเบียนชิ้นใหม่ทดแทนต่อเลย" (หน้าพิมพ์ = ติ๊กไว้, หน้าอุปกรณ์รายชิ้น = ไม่ติ๊ก) */
+  defaultReplace?: boolean;
 }
 
 interface FormValues {
@@ -19,7 +21,7 @@ interface FormValues {
   replace: boolean;
 }
 
-export default function DisposeModal({ unit, onClose, onDisposed }: Props) {
+export default function DisposeModal({ unit, onClose, onDisposed, defaultReplace = true }: Props) {
   const { getUnitInfo, disposeUnit } = useStore();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
@@ -33,7 +35,7 @@ export default function DisposeModal({ unit, onClose, onDisposed }: Props) {
   useEffect(() => {
     if (!unit || !info) return;
     form.resetFields();
-    form.setFieldsValue({ reason: info.status === 'last' ? 'max_round' : undefined, note: '', replace: true });
+    form.setFieldsValue({ reason: info.status === 'last' ? 'max_round' : undefined, note: '', replace: defaultReplace });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit?.id]);
 

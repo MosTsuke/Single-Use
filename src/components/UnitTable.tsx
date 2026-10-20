@@ -1,10 +1,11 @@
 'use client';
 
 import { DeleteOutlined, HistoryOutlined, PrinterOutlined } from '@ant-design/icons';
-import { Button, Descriptions, Drawer, Space, Table, Tooltip, Typography } from 'antd';
+import { Alert, Button, Descriptions, Drawer, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import BulkDisposeModal from '@/components/BulkDisposeModal';
 import DisposeModal from '@/components/DisposeModal';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
 import { CycleBar, StatusTag } from '@/components/UnitBits';
@@ -22,14 +23,23 @@ interface Props {
   size?: TableProps['size'];
   pagination?: TableProps['pagination'];
   emptyText?: ReactNode;
+  /** แสดงช่องติ๊กเลือกหลายชิ้นเพื่อทำลายพร้อมกัน */
+  selectable?: boolean;
 }
 
 /** ตารางอุปกรณ์รายชิ้น + หน้าต่างประวัติ / ทำลาย / ลงทะเบียนทดแทน (ใช้ทั้งหน้าอุปกรณ์รายชิ้นและใต้รายการอุปกรณ์) */
-export default function UnitTable({ rows, showItem = true, size, pagination, emptyText }: Props) {
+export default function UnitTable({ rows, showItem = true, size, pagination, emptyText, selectable = false }: Props) {
   const { units, getUnitInfo } = useStore();
   const [viewing, setViewing] = useState<Unit | null>(null);
   const [disposing, setDisposing] = useState<Unit | null>(null);
   const [replacing, setReplacing] = useState<Unit | null>(null);
+  // เลือกหลายชิ้นเพื่อทำลายพร้อมกัน (เลือกได้เฉพาะชิ้นที่ยังไม่ถูกทำลาย)
+  const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const selectedRows = useMemo(
+    () => (selectable ? rows.filter((r) => selectedKeys.includes(r.unit.id) && r.status !== 'disposed') : []),
+    [rows, selectedKeys, selectable],
+  );
 
   const viewingInfo = viewing ? getUnitInfo(units.find((u) => u.id === viewing.id) ?? viewing) : null;
   const today = todayISO();
@@ -125,8 +135,44 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
 
   return (
     <>
+      {selectedRows.length > 0 && (
+        <Alert
+          type="error"
+          style={{ marginBottom: 12, padding: '8px 12px' }}
+          title={
+            <Space wrap>
+              <span>
+                เลือกไว้ <b>{selectedRows.length}</b> ชิ้น
+                {selectedRows.some((r) => r.status !== 'last') && (
+                  <Text type="secondary"> (มีชิ้นที่ยังไม่ครบรอบ {selectedRows.filter((r) => r.status !== 'last').length} ชิ้น)</Text>
+                )}
+              </span>
+            </Space>
+          }
+          action={
+            <Space>
+              <Button size="small" onClick={() => setSelectedKeys([])}>
+                ยกเลิกที่เลือก
+              </Button>
+              <Button size="small" type="primary" danger icon={<DeleteOutlined />} onClick={() => setBulkOpen(true)}>
+                ทำลายที่เลือก ({selectedRows.length})
+              </Button>
+            </Space>
+          }
+        />
+      )}
       <Table
         rowKey={(r) => r.unit.id}
+        rowSelection={
+          selectable
+            ? {
+                selectedRowKeys: selectedRows.map((r) => r.unit.id),
+                onChange: (keys) => setSelectedKeys(keys as number[]),
+                getCheckboxProps: (r) => ({ disabled: r.status === 'disposed' }),
+                preserveSelectedRowKeys: true,
+              }
+            : undefined
+        }
         size={size}
         columns={columns}
         dataSource={rows}
@@ -205,7 +251,14 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
       <DisposeModal
         unit={disposing}
         onClose={() => setDisposing(null)}
+        defaultReplace={false}
         onDisposed={(u, replace) => replace && setReplacing(u)}
+      />
+      <BulkDisposeModal
+        rows={selectedRows}
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onDone={() => setSelectedKeys([])}
       />
       <RegisterUnitModal open={!!replacing} onClose={() => setReplacing(null)} replaces={replacing ?? undefined} />
     </>

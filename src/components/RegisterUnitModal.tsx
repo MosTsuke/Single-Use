@@ -32,7 +32,7 @@ interface FormValues {
 }
 
 export default function RegisterUnitModal({ open, onClose, defaultSn, defaultItemId, replaces, onDone, defaultPrintNow = true }: Props) {
-  const { items, staff, findUnitBySn, suggestSns, registerUnits, sterilize } = useStore();
+  const { items, staff, findUnitBySn, suggestSns, registerUnits, sterilize, removeLogs } = useStore();
   const printStickers = usePrintStickers();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
@@ -66,17 +66,31 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
       message.error(res.error);
       return;
     }
-    if (v.printNow) {
-      const mfg = todayISO();
-      const exp = addDays(mfg, item.shelf);
-      const logs = res.value.map((u) => sterilize(u.id, mfg, exp, { staffId: v.staffId! })).flatMap((r) => (r.ok ? [r.value] : []));
-      printStickers(logs);
-    }
-    message.success(
-      `ลงทะเบียน ${res.value.length} ชิ้นแล้ว${v.printNow ? ' และส่งพิมพ์สติ๊กเกอร์รอบที่ 1' : ''}`,
-    );
+    message.success(`ลงทะเบียน ${res.value.length} ชิ้นแล้ว`);
     onDone?.(res.value);
     onClose();
+    if (v.printNow) {
+      // พิมพ์รอบที่ 1 — บันทึกทันที มีปุ่มย้อนกลับหลังพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์)
+      const mfg = todayISO();
+      const exp = addDays(mfg, item.shelf);
+      const logs = res.value
+        .map((u) => sterilize(u.id, mfg, exp, { staffId: v.staffId! }))
+        .flatMap((r) => (r.ok ? [r.value] : []));
+      setTimeout(
+        () =>
+          printStickers(logs, {
+            undo: {
+              title: `พิมพ์รอบที่ 1 ของ ${logs.length} ชิ้นแล้ว`,
+              onUndo: () => {
+                const r = removeLogs(logs.map((l) => l.id));
+                if (r.ok) message.info('ย้อนกลับแล้ว — ชิ้นที่ลงทะเบียนยังเป็น "ชิ้นใหม่" ยิง SN ที่หน้าพิมพ์เพื่อพิมพ์รอบที่ 1 ได้');
+                else message.error(r.error);
+              },
+            },
+          }),
+        400,
+      );
+    }
   };
 
   return (

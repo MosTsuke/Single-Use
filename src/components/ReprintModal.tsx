@@ -18,7 +18,7 @@ interface Props {
 }
 
 export default function ReprintModal({ open, onClose, itemId }: Props) {
-  const { logs, units, items, createReprint } = useStore();
+  const { logs, units, items, createReprint, removeLogs } = useStore();
   const printStickers = usePrintStickers();
   const { settings: printer } = usePrinterSettings();
   const { message } = App.useApp();
@@ -57,14 +57,27 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
 
   const confirmReprint = () => {
     if (!confirming) return;
-    const r = createReprint(confirming.id, { useBarcode: withBarcode });
+    const src = confirming;
     setConfirming(null);
-    if (!r) return;
     // ปิดหน้าต่างให้เสร็จก่อน แล้วค่อยเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
     // (หน้าต่างพิมพ์จะหยุดแอนิเมชันปิด modal ทำให้ modal ค้างจนปิดไม่ได้)
     onClose();
-    setTimeout(() => printStickers([r]), 400);
-    message.success(`ส่งพิมพ์ซ้ำ ${r.name} รอบ ${r.round}/${r.maxRound} แล้ว`);
+    const r = createReprint(src.id, { useBarcode: withBarcode });
+    if (!r) return;
+    setTimeout(
+      () =>
+        printStickers([r], {
+          undo: {
+            title: `พิมพ์ซ้ำ ${r.name} รอบ ${r.round}/${r.maxRound} แล้ว`,
+            onUndo: () => {
+              const res = removeLogs([r.id]);
+              if (res.ok) message.info('ย้อนกลับแล้ว — ไม่นับการพิมพ์ซ้ำครั้งนี้');
+              else message.error(res.error);
+            },
+          },
+        }),
+      400,
+    );
   };
 
   const columns: ColumnsType<(typeof rows)[number]> = [

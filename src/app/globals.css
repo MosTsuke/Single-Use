@@ -187,3 +187,20 @@ body {
     display: none;
   }
 }
+
+/* ================= แดชบอร์ด ================= */
+.dash-row:hover {
+  background: #f8fafc;
+}
+.dash-col:hover {
+  background: rgba(37, 99, 235, 0.05);
+  border-radius: 6px;
+}
+.dash-tile {
+  display: block;
+  height: 100%;
+  color: inherit;
+}
+.dash-tile:hover .ant-card {
+  border-color: #93c5fd;
+}

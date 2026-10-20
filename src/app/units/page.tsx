@@ -128,6 +128,8 @@ function UnitsView() {
           />
         </Flex>
         <UnitTable
+          // ทำลายหลายชิ้นพร้อมกัน — เปิดเฉพาะแท็บรอทำลาย
+          selectable={status === 'last'}
           rows={rows}
           pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} ชิ้น` }}
           emptyText={
