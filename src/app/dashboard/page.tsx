@@ -9,24 +9,17 @@ import {
   PrinterOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Card, Col, Empty, Flex, Row, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Card, Col, Empty, Flex, Row, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState, type ReactNode } from 'react';
 import { ColumnChart, INK, Meter, SERIES, ShareBar } from '@/components/DashCharts';
-import { dayjs, fiscalRange, fiscalYearOf, thaiDate, thaiDateTime, todayISO, addDays } from '@/lib/date';
+import type { Dayjs } from 'dayjs';
+import { PeriodPicker, rangeOf, type Period } from '@/components/PeriodPicker';
+import { dayjs, thaiDate, thaiDateTime, todayISO, addDays } from '@/lib/date';
 import { useStore, type UnitInfo } from '@/lib/store';
 import { DISPOSE_REASON_LABEL, type DisposeReason } from '@/lib/types';
 
 const { Text } = Typography;
-
-type Period = 'month' | '3m' | '6m' | 'fiscal' | 'all';
-const PERIODS: { value: Period; label: string }[] = [
-  { value: 'month', label: 'เดือนนี้' },
-  { value: '3m', label: '3 เดือน' },
-  { value: '6m', label: '6 เดือน' },
-  { value: 'fiscal', label: 'ปีงบนี้' },
-  { value: 'all', label: 'ทั้งหมด' },
-];
 
 const REASONS: DisposeReason[] = ['max_round', 'damaged', 'worn', 'lost', 'other'];
 /** สีของสาเหตุ — ครบรอบ = น้ำเงิน (ปกติ), ก่อนกำหนด = สีอื่นตามลำดับ */
@@ -40,15 +33,6 @@ const REASON_COLOR: Record<DisposeReason, string> = {
 const CRITICAL = '#d03b3b';
 const WARNING = '#d97706';
 
-function periodStart(p: Period): string | null {
-  const t = dayjs();
-  if (p === 'month') return t.startOf('month').format('YYYY-MM-DD');
-  if (p === '3m') return t.subtract(3, 'month').add(1, 'day').format('YYYY-MM-DD');
-  if (p === '6m') return t.subtract(6, 'month').add(1, 'day').format('YYYY-MM-DD');
-  if (p === 'fiscal') return fiscalRange(fiscalYearOf(todayISO())).start;
-  return null;
-}
-
 interface DisposedRow {
   info: UnitInfo;
   reason: DisposeReason;
@@ -57,16 +41,23 @@ interface DisposedRow {
 
 export default function DashboardPage() {
   const { units, items, logs, getUnitInfo } = useStore();
-  const [period, setPeriod] = useState<Period>('3m');
+  const [period, setPeriod] = useState<Period>('month');
+  const [ref, setRef] = useState<Dayjs>(() => dayjs());
   const [itemId, setItemId] = useState<number | undefined>();
   const [reason, setReason] = useState<string | null>(null);
 
   const today = todayISO();
   const soon = addDays(today, 7);
-  const start = periodStart(period);
-  const inPeriod = (stamp?: string) => !!stamp && (!start || stamp.slice(0, 10) >= start);
-  const periodLabel = PERIODS.find((p) => p.value === period)!.label;
-  const rangeText = start ? `${thaiDate(start)} – ${thaiDate(today)}` : 'ข้อมูลทั้งหมด';
+  const range = rangeOf(period, ref);
+  const start = range?.start ?? null;
+  const end = range?.end ?? null;
+  const inPeriod = (stamp?: string) => {
+    if (!stamp) return false;
+    const d0 = stamp.slice(0, 10);
+    return (!start || d0 >= start) && (!end || d0 <= end);
+  };
+  const periodLabel = range ? range.label.replace(/ \(.*\)$/, '') : 'ทั้งหมด';
+  const rangeText = range ? `${thaiDate(range.start)} – ${thaiDate(range.end)}` : 'ข้อมูลทั้งหมด';
 
   const all = useMemo(
     () => units.filter((u) => !itemId || u.itemId === itemId).map(getUnitInfo),
@@ -95,37 +86,34 @@ export default function DashboardPage() {
 
     return { live, ready, waiting, expired, expSoon, disposed, byReason, early, prints, reprints };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, logs, itemId, start, today, soon]);
+  }, [all, logs, itemId, start, end, today, soon]);
 
   // ===== แนวโน้มตามช่วงเวลาที่เลือก (ผลรวมทุกแท่ง = ตัวเลขด้านบน) =====
   const trend = useMemo(() => {
     const now = dayjs();
-    // จุดเริ่ม: ตามช่วงที่เลือก / "ทั้งหมด" = ข้อมูลแรกสุด
+    // จุดเริ่ม: ตามช่วงที่เลือก / "ทั้งหมด" = ข้อมูลแรกสุด · จุดจบ: ไม่เกินวันนี้
     let from = start ? dayjs(start) : now;
     if (!start) {
       const first = [...logs.map((l) => l.time), ...all.map((i) => i.unit.disposedAt ?? '')].filter(Boolean).sort()[0];
       from = first ? dayjs(first.slice(0, 10)) : now;
     }
-    type Gran = 'day' | 'week' | 'month';
-    const gran: Gran = period === 'month' ? 'day' : period === '3m' ? 'week' : 'month';
-    const buckets: { key: string; label: string }[] = [];
-    if (gran === 'day') {
-      for (let d0 = from.startOf('day'); !d0.isAfter(now, 'day'); d0 = d0.add(1, 'day'))
-        buckets.push({ key: d0.format('YYYY-MM-DD'), label: d0.format('D') });
-    } else if (gran === 'week') {
-      for (let d0 = from.startOf('day'); !d0.isAfter(now, 'day'); d0 = d0.add(7, 'day'))
-        buckets.push({ key: d0.format('YYYY-MM-DD'), label: d0.format('D MMM') });
+    const to = end && dayjs(end).isBefore(now, 'day') ? dayjs(end) : now;
+    type Gran = 'hour' | 'day' | 'month';
+    const gran: Gran = period === 'day' ? 'hour' : period === 'month' ? 'day' : 'month';
+    const buckets: { key: string; label: string; full: string }[] = [];
+    if (gran === 'hour') {
+      for (let h = 0; h < 24; h++) {
+        const k = String(h).padStart(2, '0');
+        buckets.push({ key: k, label: h % 3 === 0 ? `${k}:00` : '', full: `${k}:00–${k}:59 น.` });
+      }
+    } else if (gran === 'day') {
+      for (let d0 = from.startOf('day'); !d0.isAfter(to, 'day'); d0 = d0.add(1, 'day'))
+        buckets.push({ key: d0.format('YYYY-MM-DD'), label: d0.format('D'), full: thaiDate(d0.format('YYYY-MM-DD')) });
     } else {
-      for (let d0 = from.startOf('month'); !d0.isAfter(now, 'month'); d0 = d0.add(1, 'month'))
-        buckets.push({ key: d0.format('YYYY-MM'), label: d0.format('MMM BB') });
+      for (let d0 = from.startOf('month'); !d0.isAfter(to, 'month'); d0 = d0.add(1, 'month'))
+        buckets.push({ key: d0.format('YYYY-MM'), label: d0.format('MMM BB'), full: d0.format('MMMM BBBB') });
     }
-    const keyOf = (stamp: string) => {
-      const day = stamp.slice(0, 10);
-      if (gran === 'day') return day;
-      if (gran === 'month') return day.slice(0, 7);
-      const idx = Math.floor(dayjs(day).diff(from.startOf('day'), 'day') / 7);
-      return buckets[idx]?.key ?? '';
-    };
+    const keyOf = (stamp: string) => (gran === 'hour' ? stamp.slice(11, 13) : gran === 'day' ? stamp.slice(0, 10) : stamp.slice(0, 7));
     const idx = new Map(buckets.map((b, i) => [b.key, i]));
     const prints = buckets.map(() => [0, 0]);
     const disposals = buckets.map(() => [0, 0]);
@@ -138,16 +126,16 @@ export default function DashboardPage() {
       const i = idx.get(keyOf(x.date));
       if (i != null) disposals[i][x.reason === 'max_round' ? 0 : 1]++;
     });
-    const granLabel = gran === 'day' ? 'รายวัน' : gran === 'week' ? 'รายสัปดาห์' : 'รายเดือน';
+    const granLabel = gran === 'hour' ? 'รายชั่วโมง' : gran === 'day' ? 'รายวัน' : 'รายเดือน';
     // รายวันมีหลายแท่ง — แสดงป้ายวันที่ห่าง ๆ ไม่ให้ทับกัน
-    const every = buckets.length > 16 ? Math.ceil(buckets.length / 10) : 1;
+    const every = gran === 'hour' ? 1 : buckets.length > 16 ? Math.ceil(buckets.length / 10) : 1;
     return {
       granLabel,
-      prints: buckets.map((b, i) => ({ label: i % every === 0 ? b.label : '', full: b.label, values: prints[i] })),
-      disposals: buckets.map((b, i) => ({ label: i % every === 0 ? b.label : '', full: b.label, values: disposals[i] })),
+      prints: buckets.map((b, i) => ({ label: i % every === 0 ? b.label : '', full: b.full, values: prints[i] })),
+      disposals: buckets.map((b, i) => ({ label: i % every === 0 ? b.label : '', full: b.full, values: disposals[i] })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logs, all, itemId, start, period, d.disposed]);
+  }, [logs, all, itemId, start, end, period, d.disposed]);
 
   // ===== แยกตามรายการอุปกรณ์ =====
   const perItem = useMemo(() => {
@@ -177,7 +165,7 @@ export default function DashboardPage() {
       })
       .sort((a, b) => b.prints - a.prints || b.full + b.early - (a.full + a.early) || a.name.localeCompare(b.name, 'th'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, all, logs, d.disposed, itemId, today, start]);
+  }, [items, all, logs, d.disposed, itemId, today, start, end]);
 
   const shownDisposed = reason ? d.disposed.filter((x) => x.reason === reason) : d.disposed;
 
@@ -187,7 +175,7 @@ export default function DashboardPage() {
       <Card styles={{ body: { padding: '12px 16px' } }}>
         <Flex wrap gap={12} align="center">
           <FilterOutlined style={{ color: INK.muted }} />
-          <Segmented<Period> options={PERIODS} value={period} onChange={(v) => (setPeriod(v), setReason(null))} />
+          <PeriodPicker period={period} value={ref} onChange={(p, r) => (setPeriod(p), setRef(r), setReason(null))} />
           <Select
             allowClear
             showSearch

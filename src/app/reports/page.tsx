@@ -32,47 +32,13 @@ import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { useMemo, useState } from 'react';
 import { dayjs, fiscalRange, fiscalYearOf, ISO_DATE, thaiDate, thaiDateTime, todayISO } from '@/lib/date';
+import { PeriodPicker, rangeOf, type Period } from '@/components/PeriodPicker';
 import { useStore } from '@/lib/store';
 import type { PrintLog } from '@/lib/types';
 
-type Period = 'all' | 'day' | 'month' | 'year' | 'fiscal';
 type StatusFilter = 'all' | 'normal' | 'reprint';
 
 const { Text } = Typography;
-
-const PERIOD_OPTIONS: { value: Period; label: string }[] = [
-  { value: 'all', label: 'ทั้งหมด' },
-  { value: 'day', label: 'รายวัน' },
-  { value: 'month', label: 'รายเดือน' },
-  { value: 'year', label: 'รายปี' },
-  { value: 'fiscal', label: 'ปีงบประมาณ' },
-];
-
-function rangeOf(period: Period, ref: Dayjs): { start: string; end: string; label: string } | null {
-  if (period === 'all') return null;
-  if (period === 'day') {
-    const d = ref.format(ISO_DATE);
-    return { start: d, end: d, label: `วันที่ ${thaiDate(d)}` };
-  }
-  if (period === 'month') {
-    return {
-      start: ref.startOf('month').format(ISO_DATE),
-      end: ref.endOf('month').format(ISO_DATE),
-      label: `เดือน${ref.format('MMMM BBBB')}`,
-    };
-  }
-  if (period === 'year') {
-    return {
-      start: ref.startOf('year').format(ISO_DATE),
-      end: ref.endOf('year').format(ISO_DATE),
-      label: `ปี พ.ศ. ${ref.year() + 543}`,
-    };
-  }
-  // ปีงบประมาณ: ปีที่เลือก = ปีงบที่สิ้นสุดใน ก.ย. ของปีนั้น
-  const fy = ref.year();
-  const r = fiscalRange(fy);
-  return { ...r, label: `ปีงบประมาณ ${fy + 543} (${thaiDate(r.start)} – ${thaiDate(r.end)})` };
-}
 
 function downloadCSV(rows: PrintLog[], filename: string) {
   const head = ['วัน-เวลาที่พิมพ์', 'รายการอุปกรณ์', 'รอบ', 'รอบสูงสุด', 'วันผลิต', 'วันหมดอายุ', 'SN', 'สถานะ', 'เจ้าหน้าที่', 'หมายเหตุ'];
@@ -114,11 +80,6 @@ export default function ReportsPage() {
 
   const range = rangeOf(period, ref);
 
-  const changePeriod = (p: Period) => {
-    setPeriod(p);
-    // ปีงบประมาณปัจจุบัน (เช่น ต.ค. 2569 อยู่ในปีงบ 2570)
-    setRef(p === 'fiscal' ? dayjs().year(fiscalYearOf(todayISO())) : dayjs());
-  };
 
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
@@ -238,25 +199,7 @@ export default function ReportsPage() {
         <Flex wrap gap={12} align="center" justify="space-between">
           <Flex wrap gap={12} align="center">
             <FilterOutlined style={{ color: '#64748b' }} />
-            <Segmented<Period> options={PERIOD_OPTIONS} value={period} onChange={changePeriod} />
-            {period !== 'all' && (
-              <DatePicker
-                allowClear={false}
-                value={ref}
-                onChange={(d) => d && setRef(d)}
-                picker={period === 'day' ? 'date' : period === 'month' ? 'month' : 'year'}
-                format={
-                  period === 'day'
-                    ? 'DD/MM/BBBB'
-                    : period === 'month'
-                      ? 'MMMM BBBB'
-                      : period === 'fiscal'
-                        ? '[ปีงบ] BBBB'
-                        : '[ปี] BBBB'
-                }
-                style={{ width: 180 }}
-              />
-            )}
+            <PeriodPicker period={period} value={ref} onChange={(p, r) => (setPeriod(p), setRef(r))} />
           </Flex>
           <Button
             icon={<DownloadOutlined />}
