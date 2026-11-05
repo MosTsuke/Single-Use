@@ -20,11 +20,13 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AdminGateCard, AdminLoginModal } from '@/components/AdminLogin';
 import { IDLE_MINUTES, useAuth } from '@/lib/auth';
+import { BRAND } from '@/lib/brand';
 import { useEffect, useState, type ReactNode } from 'react';
 import { dayjs } from '@/lib/date';
 import { useStore } from '@/lib/store';
 
 const { Sider, Header, Content } = Layout;
+const { Text } = Typography;
 
 const NAV = [
   { key: '/print', icon: <PrinterOutlined />, label: 'พิมพ์สติ๊กเกอร์', desc: 'ยิง SN ของอุปกรณ์ที่ sterilize เสร็จ แล้วพิมพ์สติ๊กเกอร์รอบถัดไป' },
@@ -72,26 +74,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
         trigger={null}
         style={{ position: isMobile ? 'fixed' : 'sticky', top: 0, height: '100vh', zIndex: 100, left: 0 }}
       >
-        <Flex align="center" gap={12} style={{ height: 64, padding: collapsed ? '0 24px' : '0 20px' }}>
-          <Flex
-            align="center"
-            justify="center"
-            style={{
-              width: 32,
-              height: 32,
-              flex: 'none',
-              borderRadius: 8,
-              background: 'linear-gradient(135deg,#f59e0b,#f97316)',
-              color: '#fff',
-              fontSize: 18,
-            }}
-          >
-            <TagsOutlined />
-          </Flex>
+        {/* โลโก้ + ชื่อโรงพยาบาล (ข้อมูลใน src/lib/brand.ts) */}
+        <Flex align="center" gap={12} style={{ height: 64, padding: collapsed ? '0 20px' : '0 16px' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={BRAND.hospitalLogo}
+            alt={BRAND.hospitalName}
+            style={{ width: 36, height: 36, flex: 'none', objectFit: 'contain', borderRadius: 8 }}
+          />
           {!collapsed && (
-            <div style={{ lineHeight: 1.2 }}>
-              <div style={{ color: '#fff', fontWeight: 600, fontSize: 16 }}>Single-Use</div>
-              <div style={{ color: '#94a3b8', fontSize: 12 }}>Sticker Management</div>
+            <div style={{ lineHeight: 1.25, minWidth: 0 }}>
+              <div
+                title={BRAND.hospitalName}
+                style={{ color: '#fff', fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {BRAND.hospitalName}
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: 12 }}>{BRAND.appName}</div>
             </div>
           )}
         </Flex>
@@ -109,6 +108,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 : []),
             ]}
           />
+          {/* โลโก้บริษัทผู้พัฒนา (ซ่อนเมื่อย่อแถบเมนู) */}
+          {!collapsed && (
+            <Flex vertical align="center" gap={6} style={{ padding: '12px 16px' }}>
+              <Text style={{ color: '#64748b', fontSize: 11 }}>พัฒนาโดย</Text>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={BRAND.companyLogo} alt={BRAND.companyName} style={{ width: '100%', maxWidth: 180, maxHeight: 64, objectFit: 'contain' }} />
+            </Flex>
+          )}
           {/* ล่างสุดของแถบเมนู: เข้า/ออกจากระบบแอดมิน */}
           <div style={{ padding: 12, borderTop: '1px solid #1e293b' }}>
             {isAdmin ? (

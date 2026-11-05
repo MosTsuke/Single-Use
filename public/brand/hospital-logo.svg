@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- MOCK: โลโก้โรงพยาบาลชั่วคราว — แทนที่ไฟล์นี้ด้วยโลโก้จริง (ชื่อไฟล์เดิม) -->
+  <rect width="64" height="64" rx="14" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="24" fill="#e0f2fe"/>
+  <path d="M27 16h10v11h11v10H37v11H27V37H16V27h11z" fill="#0284c7"/>
+</svg>
