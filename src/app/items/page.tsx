@@ -46,7 +46,7 @@ type ItemForm = Omit<MasterItem, 'id'>;
 const { Text } = Typography;
 
 export default function ItemsPage() {
-  const { items, units, logs, staff, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
+  const { items, units, logs, allLogs, staff, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
   const { message, modal } = App.useApp();
   const [form] = Form.useForm<ItemForm>();
   const [editing, setEditing] = useState<MasterItem | null>(null);
@@ -102,7 +102,7 @@ export default function ItemsPage() {
   };
 
   const exportBackup = () => {
-    const blob = new Blob([JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), items, units, logs, staff }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), items, units, logs: allLogs, staff }, null, 2)], {
       type: 'application/json',
     });
     const a = document.createElement('a');

@@ -1,14 +1,14 @@
 'use client';
 
-import { BarcodeOutlined, RedoOutlined, SearchOutlined } from '@ant-design/icons';
-import { App, Button, Empty, Flex, Input, Modal, Space, Switch, Table, Tag, Typography } from 'antd';
+import { BarcodeOutlined, QrcodeOutlined, RedoOutlined, SearchOutlined } from '@ant-design/icons';
+import { App, Button, Empty, Flex, Input, Modal, Segmented, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { thaiDate, thaiDateTime } from '@/lib/date';
 import { usePrinterSettings, usePrintStickers } from '@/lib/print';
 import { useStore } from '@/lib/store';
 import Sticker from '@/components/Sticker';
-import type { PrintLog } from '@/lib/types';
+import type { CodeType, PrintLog } from '@/lib/types';
 
 interface Props {
   open: boolean;
@@ -24,7 +24,7 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
   const { message } = App.useApp();
   const [q, setQ] = useState('');
   const [confirming, setConfirming] = useState<PrintLog | null>(null);
-  const [withBarcode, setWithBarcode] = useState(true);
+  const [codeType, setCodeType] = useState<CodeType>('barcode');
 
   const rows = useMemo(() => {
     const reprintCount = new Map<number, number>();
@@ -46,13 +46,14 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
   // เปิดหน้าต่างยืนยัน พร้อมตัวอย่างสติ๊กเกอร์ — ค่าเริ่มต้นบาร์โคดตามที่ตั้งไว้ของรายการอุปกรณ์
   const doReprint = (log: PrintLog) => {
     const item = items.find((i) => i.id === log.itemId);
-    setWithBarcode(item?.useBarcode ?? log.useBarcode);
+    // ค่าเริ่มต้น = ชนิดรหัสของดวงเดิม (ข้อมูลเก่า = ตามรายการอุปกรณ์)
+    setCodeType(log.codeType ?? ((item?.useBarcode ?? log.useBarcode) ? 'barcode' : 'none'));
     setConfirming(log);
   };
 
   const previewData = useMemo(
-    () => (confirming ? { ...confirming, useBarcode: withBarcode } : null),
-    [confirming, withBarcode],
+    () => (confirming ? { ...confirming, codeType, useBarcode: codeType === 'barcode' } : null),
+    [confirming, codeType],
   );
 
   const confirmReprint = () => {
@@ -62,7 +63,7 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
     // ปิดหน้าต่างให้เสร็จก่อน แล้วค่อยเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
     // (หน้าต่างพิมพ์จะหยุดแอนิเมชันปิด modal ทำให้ modal ค้างจนปิดไม่ได้)
     onClose();
-    const r = createReprint(src.id, { useBarcode: withBarcode });
+    const r = createReprint(src.id, { codeType });
     if (!r) return;
     setTimeout(
       () =>
@@ -201,11 +202,15 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
               </div>
             </div>
             <Flex justify="space-between" align="center" style={{ marginTop: 12 }}>
-              <Space size={8}>
-                <BarcodeOutlined style={{ color: withBarcode ? '#2563eb' : '#94a3b8' }} />
-                <Typography.Text>พิมพ์บาร์โคด</Typography.Text>
-                <Switch checked={withBarcode} onChange={setWithBarcode} />
-              </Space>
+              <Segmented<CodeType>
+                value={codeType}
+                onChange={setCodeType}
+                options={[
+                  { value: 'barcode', label: 'บาร์โคด', icon: <BarcodeOutlined /> },
+                  { value: 'qr', label: 'QR', icon: <QrcodeOutlined /> },
+                  { value: 'none', label: 'ไม่มี' },
+                ]}
+              />
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 มีผลกับดวงนี้ดวงเดียว
                 {printer.printerName && <> · พิมพ์ที่ <b>{printer.printerName}</b></>}

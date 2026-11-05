@@ -7,6 +7,7 @@ import {
   FileTextOutlined,
   FilterOutlined,
   RedoOutlined,
+  RollbackOutlined,
   SearchOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
@@ -26,6 +27,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -36,7 +38,7 @@ import { PeriodPicker, rangeOf, type Period } from '@/components/PeriodPicker';
 import { useStore } from '@/lib/store';
 import type { PrintLog } from '@/lib/types';
 
-type StatusFilter = 'all' | 'normal' | 'reprint';
+type StatusFilter = 'all' | 'normal' | 'reprint' | 'void';
 
 const { Text } = Typography;
 
@@ -52,9 +54,14 @@ function downloadCSV(rows: PrintLog[], filename: string) {
       thaiDate(l.mfg),
       thaiDate(l.exp),
       l.barcode ? `\t${l.barcode}` : '-',
-      l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์ปกติ',
+      l.voidedAt ? 'ยกเลิก' : l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์ปกติ',
       l.staffName ?? '',
-      l.skippedFrom != null ? `ข้ามจากรอบ ${l.skippedFrom}${l.note ? ' · ' + l.note : ''}` : (l.note ?? ''),
+      [
+        l.skippedFrom != null ? `ข้ามจากรอบ ${l.skippedFrom}${l.note ? ' · ' + l.note : ''}` : (l.note ?? ''),
+        l.voidedAt ? `ยกเลิก ${thaiDateTime(l.voidedAt)}${l.voidBy ? ' โดย ' + l.voidBy : ''} · ${l.voidReason ?? ''}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | '),
     ]
       .map(esc)
       .join(','),
@@ -71,7 +78,7 @@ function downloadCSV(rows: PrintLog[], filename: string) {
 }
 
 export default function ReportsPage() {
-  const { logs, items } = useStore();
+  const { allLogs, items } = useStore();
   const [period, setPeriod] = useState<Period>('month');
   const [ref, setRef] = useState<Dayjs>(() => dayjs());
   const [itemFilter, setItemFilter] = useState<number | undefined>();
@@ -83,27 +90,30 @@ export default function ReportsPage() {
 
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
-    return logs
+    return allLogs
       .filter((l) => {
         if (range) {
           const d = l.time.slice(0, 10);
           if (d < range.start || d > range.end) return false;
         }
         if (itemFilter && l.itemId !== itemFilter) return false;
-        if (status === 'normal' && l.isReprint) return false;
-        if (status === 'reprint' && !l.isReprint) return false;
+        if (status === 'normal' && (l.isReprint || l.voidedAt)) return false;
+        if (status === 'reprint' && (!l.isReprint || l.voidedAt)) return false;
+        if (status === 'void' && !l.voidedAt) return false;
         if (kw && ![l.name, l.barcode, l.staffName ?? ''].some((v) => v.toLowerCase().includes(kw))) return false;
         return true;
       })
       .slice()
       .reverse();
-  }, [logs, range, itemFilter, status, q]);
+  }, [allLogs, range, itemFilter, status, q]);
 
   const stats = useMemo(() => {
-    const normal = filtered.filter((l) => !l.isReprint).length;
-    const reprint = filtered.length - normal;
+    // ใบที่ยกเลิกแสดงในตาราง แต่ไม่นับในสถิติ
+    const active = filtered.filter((l) => !l.voidedAt);
+    const normal = active.filter((l) => !l.isReprint).length;
+    const reprint = active.length - normal;
     const byItem = new Map<string, { normal: number; reprint: number }>();
-    filtered.forEach((l) => {
+    active.forEach((l) => {
       const s = byItem.get(l.name) ?? { normal: 0, reprint: 0 };
       if (l.isReprint) s.reprint++;
       else s.normal++;
@@ -112,7 +122,7 @@ export default function ReportsPage() {
     const top = [...byItem.entries()]
       .map(([name, s]) => ({ name, ...s, total: s.normal + s.reprint }))
       .sort((a, b) => b.total - a.total);
-    return { normal, reprint, total: filtered.length, top };
+    return { normal, reprint, total: active.length, top };
   }, [filtered]);
 
   const columns: ColumnsType<PrintLog> = [
@@ -178,7 +188,13 @@ export default function ReportsPage() {
       width: 150,
       align: 'center',
       render: (_, l) =>
-        l.isReprint ? (
+        l.voidedAt ? (
+          <Tooltip title={`ยกเลิก ${thaiDateTime(l.voidedAt)}${l.voidBy ? ` โดย ${l.voidBy}` : ''} — ${l.voidReason ?? ''}`}>
+            <Tag icon={<RollbackOutlined />} color="error">
+              ยกเลิกแล้ว
+            </Tag>
+          </Tooltip>
+        ) : l.isReprint ? (
           <Tag icon={<RedoOutlined />} color="warning">
             พิมพ์ซ้ำ (ชำรุด)
           </Tag>
@@ -263,6 +279,7 @@ export default function ReportsPage() {
                     { value: 'all', label: 'ทุกสถานะ' },
                     { value: 'normal', label: 'พิมพ์ปกติ' },
                     { value: 'reprint', label: 'พิมพ์ซ้ำ' },
+                    { value: 'void', label: 'ยกเลิกแล้ว' },
                   ]}
                 />
                 <Input

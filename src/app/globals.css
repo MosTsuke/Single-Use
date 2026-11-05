@@ -54,15 +54,19 @@ body {
   overflow: hidden;
   margin-top: 0.1mm;
 }
-.sticker .st-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+.sticker .st-info {
+  /* ขนาดตัวอักษรของบรรทัดล่าง — ใช้คำนวณความสูงแต่ละบรรทัด */
+  --fs: 2.2mm;
+  /* ความสูงบรรทัด: วันที่ 1.22 / จนท. 1.6 (กันสระล่างโดนตัด) − ขยับขึ้น 0.16 */
+  --line: calc(var(--fs) * 1.22);
+  --staff: calc(var(--fs) * 1.44);
   margin-top: auto;
-  gap: 1mm;
+  position: relative;
+  font-size: var(--fs);
 }
-.sticker .st-dates {
-  font-size: 2.2mm;
+.sticker .st-lines {
+  /* สูงคงที่เท่า 3 บรรทัดเสมอ บรรทัดเรียงจากบน → ปิดบรรทัดไหน บรรทัดถัดไปเลื่อนขึ้น */
+  min-height: calc(var(--line) * 2 + var(--staff));
   line-height: 1.22;
   font-weight: 400; /* ป้าย "วันผลิต/หมดอายุ" ตัวปกติ ส่วนวันที่ตัวหนา (.st-date) */
   white-space: nowrap;
@@ -72,6 +76,10 @@ body {
   font-size: 1.08em;
 }
 .sticker .st-round {
+  /* ตำแหน่งตายตัว: ฐานตรงกับบรรทัด "หมดอายุ" ไม่ขยับตามบรรทัดอื่น */
+  position: absolute;
+  right: 0;
+  bottom: var(--staff);
   font-size: 3.3mm;
   font-weight: 700;
   white-space: nowrap;
@@ -86,13 +94,15 @@ body {
 }
 /* ชื่อเจ้าหน้าที่ผู้พิมพ์ — บรรทัดล่างสุด ยาวเกินตัดด้วย … */
 .sticker .st-staff {
-  font-size: 2.2mm;
   /* สูงพอให้สระล่าง (ุ ู) ไม่ถูกตัด เพราะบรรทัดนี้ใช้ overflow: hidden เพื่อตัดชื่อยาวด้วย … */
   line-height: 1.6;
-  margin-top: -0.35mm;
+  margin-top: calc(var(--fs) * -0.16);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sticker .st-staff-up {
+  margin-right: 17mm; /* อยู่แถวเดียวกับ "รอบ" → ตัดชื่อก่อนถึง "รอบ" */
 }
 .sticker .st-staff b {
   font-weight: 700;
@@ -104,12 +114,57 @@ body {
   letter-spacing: 0.2mm;
   margin-top: 0.3mm;
 }
-.sticker.no-barcode .st-dates,
-.sticker.no-barcode .st-staff {
-  font-size: 2.5mm;
+.sticker.no-barcode .st-info {
+  --fs: 2.5mm;
 }
 .sticker.no-barcode .st-round {
   font-size: 3.8mm;
+}
+.sticker.no-barcode .st-staff-up {
+  margin-right: 20mm;
+}
+
+/* ----- แบบ QR: QR ซ้าย (+ รอบใต้ QR) / ข้อความขวา ----- */
+.sticker.st-qr-layout {
+  flex-direction: row;
+  gap: 1.6mm;
+}
+.sticker .st-qr-col {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.sticker .st-qr {
+  display: block;
+}
+.sticker.st-qr-layout .st-round {
+  position: static;
+  font-size: 3.1mm;
+  line-height: 1.15;
+}
+.sticker .st-qr-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sticker .st-qr-main .st-name {
+  font-size: 3.6mm;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  max-height: 9.8mm;
+  margin-top: 0;
+}
+.sticker .st-qr-main .st-sn {
+  text-align: left;
+  letter-spacing: 0.1mm;
+  margin-top: 0;
+}
+.sticker.st-qr-layout .st-staff-up {
+  margin-right: 0; /* "รอบ" อยู่ใต้ QR ไม่ได้อยู่ขวา จึงไม่ต้องเว้นที่ */
 }
 
 /* ตัวอย่างบนจอ: ขยาย 2 เท่า และจำลองกรอบสีส้มของม้วนสติ๊กเกอร์ */

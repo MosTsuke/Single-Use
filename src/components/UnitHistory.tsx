@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircleFilled, DeleteFilled, PlusCircleFilled, RedoOutlined } from '@ant-design/icons';
+import { CheckCircleFilled, DeleteFilled, PlusCircleFilled, RedoOutlined, RollbackOutlined } from '@ant-design/icons';
 import { Empty, Tag, Timeline, Typography } from 'antd';
 import { thaiDate, thaiDateTime } from '@/lib/date';
 import { useStore } from '@/lib/store';
@@ -10,8 +10,9 @@ const { Text } = Typography;
 
 /** ไทม์ไลน์ของอุปกรณ์ 1 ชิ้น: ลงทะเบียน → sterilize แต่ละรอบ → ทำลาย (ล่าสุดอยู่บน) */
 export default function UnitHistory({ unit }: { unit: Unit }) {
-  const { logs } = useStore();
-  const unitLogs = logs.filter((l) => l.unitId === unit.id);
+  const { allLogs } = useStore();
+  // แสดงทุกดวง รวมดวงที่ถูกยกเลิก (ขีดฆ่า) เพื่อให้ตรวจย้อนหลังได้
+  const unitLogs = allLogs.filter((l) => l.unitId === unit.id);
 
   const events: { key: string; time: string; node: React.ReactNode; color: string; icon: React.ReactNode }[] = [
     {
@@ -33,14 +34,21 @@ export default function UnitHistory({ unit }: { unit: Unit }) {
     ...unitLogs.map((l) => ({
       key: `l${l.id}`,
       time: l.time,
-      color: l.isReprint ? 'orange' : 'blue',
+      color: l.voidedAt ? 'gray' : l.isReprint ? 'orange' : 'blue',
       icon: l.isReprint ? <RedoOutlined /> : <CheckCircleFilled />,
       node: (
-        <>
-          <Text strong>{l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์สติ๊กเกอร์'}</Text>{' '}
-          <Tag color={l.isReprint ? 'warning' : 'blue'} style={{ marginLeft: 4 }}>
+        <div style={l.voidedAt ? { opacity: 0.6 } : undefined}>
+          <Text strong delete={!!l.voidedAt}>
+            {l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์สติ๊กเกอร์'}
+          </Text>{' '}
+          <Tag color={l.voidedAt ? 'default' : l.isReprint ? 'warning' : 'blue'} style={{ marginLeft: 4 }}>
             รอบ {l.round}/{l.maxRound}
           </Tag>
+          {l.voidedAt && (
+            <Tag color="error" style={{ marginLeft: 0 }}>
+              ยกเลิกแล้ว
+            </Tag>
+          )}
           <br />
           <Text type="secondary" style={{ fontSize: 12 }}>
             พิมพ์เมื่อ {thaiDateTime(l.time)}
@@ -61,9 +69,39 @@ export default function UnitHistory({ unit }: { unit: Unit }) {
               </Text>
             </>
           )}
-        </>
+        </div>
       ),
     })),
+    // เหตุการณ์ "ยกเลิกการพิมพ์" แยกเป็นอีกรายการ ณ เวลาที่ยกเลิก (เฉพาะใบหลัก)
+    ...unitLogs
+      .filter((l) => l.voidedAt && !l.isReprint)
+      .map((l) => ({
+        key: `v${l.id}`,
+        time: l.voidedAt!,
+        color: 'red',
+        icon: <RollbackOutlined />,
+        node: (
+          <>
+            <Text strong type="danger">
+              ยกเลิกการพิมพ์
+            </Text>{' '}
+            <Tag style={{ marginLeft: 4 }}>
+              รอบ {l.round}/{l.maxRound}
+            </Tag>
+            <br />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {thaiDateTime(l.voidedAt)}
+              {l.voidBy && <> · โดย {l.voidBy}</>} · รอบกลับเป็น {l.skippedFrom != null ? l.skippedFrom - 1 : l.round - 1}/{l.maxRound}
+            </Text>
+            {l.voidReason && (
+              <>
+                <br />
+                <Text style={{ fontSize: 12 }}>เหตุผล: {l.voidReason}</Text>
+              </>
+            )}
+          </>
+        ),
+      })),
   ];
   if (unit.disposedAt) {
     events.push({
@@ -92,7 +130,8 @@ export default function UnitHistory({ unit }: { unit: Unit }) {
   return (
     <Timeline
       style={{ marginTop: 8 }}
-      items={events.reverse().map((e) => ({ key: e.key, color: e.color, icon: e.icon, content: e.node }))}
+      // เรียงตามเวลา (ล่าสุดอยู่บน)
+      items={[...events].sort((a, b) => a.time.localeCompare(b.time)).reverse().map((e) => ({ key: e.key, color: e.color, icon: e.icon, content: e.node }))}
     />
   );
 }

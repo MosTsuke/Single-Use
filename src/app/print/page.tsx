@@ -15,10 +15,12 @@ import {
   RedoOutlined,
   ScanOutlined,
   SettingOutlined,
+  QrcodeOutlined,
   SwapOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   App,
   AutoComplete,
   Badge,
@@ -31,6 +33,7 @@ import {
   Input,
   InputNumber,
   Row,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -54,7 +57,7 @@ import { beep } from '@/lib/beep';
 import { dayjs, ISO_DATE, THAI_DATE, thaiDate, todayISO } from '@/lib/date';
 import { usePrinterSettings, usePrintStickers } from '@/lib/print';
 import { useStore, type UnitInfo } from '@/lib/store';
-import type { PrintLog, StickerData, Unit } from '@/lib/types';
+import { CODE_TYPE_LABEL, type CodeType, type PrintLog, type StickerData, type Unit } from '@/lib/types';
 import { normSn } from '@/lib/units';
 
 const { Text } = Typography;
@@ -70,6 +73,11 @@ interface QueueRow {
   note?: string;
   /** วันผลิตของดวงนี้ (YYYY-MM-DD) — ค่าเริ่มต้นคือวันที่ยิงเข้ารายการ */
   mfg: string;
+  /** false = ดวงนี้ไม่พิมพ์วันผลิต / หมดอายุ (ค่าเริ่มต้น = พิมพ์) */
+  showMfg?: boolean;
+  showExp?: boolean;
+  /** ชนิดรหัสของดวงนี้ (ไม่ระบุ = ตามค่าเริ่มต้นของรายการอุปกรณ์) */
+  codeType?: CodeType;
 }
 
 interface Resolved extends QueueRow {
@@ -83,6 +91,9 @@ interface Resolved extends QueueRow {
   needsNote?: boolean;
   exp?: string;
 }
+
+/** ชนิดรหัสของแถว: เลือกเอง หรือค่าเริ่มต้นของรายการอุปกรณ์ */
+const rowCode = (r: Resolved): CodeType => r.codeType ?? (r.info?.item?.useBarcode === false ? 'none' : 'barcode');
 
 export default function PrintPage() {
   return (
@@ -199,7 +210,7 @@ function SterilizeStation() {
     const logs: PrintLog[] = [];
     for (const r of list) {
       if (!r.info || !r.exp) continue;
-      const res = sterilize(r.info.unit.id, r.mfg, r.exp, { staffId, round: r.round, note: r.note });
+      const res = sterilize(r.info.unit.id, r.mfg, r.exp, { staffId, round: r.round, note: r.note, showMfg: r.showMfg, showExp: r.showExp, codeType: rowCode(r) });
       if (res.ok) logs.push(res.value);
       else message.error(`${r.sn}: ${res.error}`);
     }
@@ -290,31 +301,27 @@ function SterilizeStation() {
   const focusRow = rows.find((r) => r.key === selected) ?? rows[rows.length - 1];
   const focusUnit = focusRow?.info?.unit;
   const focusItem = focusRow?.info?.item;
-  // เปิด/ปิดบาร์โคดบนสติ๊กเกอร์ของประเภทนี้ (บันทึกเป็นค่าของประเภทอุปกรณ์)
-  const toggleBarcode = (on: boolean) => {
-    if (!focusItem) return;
-    const { id, ...rest } = focusItem;
-    updateItem(id, { ...rest, useBarcode: on });
-    message.success(`${focusItem.name}: ${on ? 'พิมพ์บาร์โคด' : 'ไม่พิมพ์บาร์โคด (แสดง SN เป็นตัวหนังสือ)'}`);
-    focusScan();
-  };
+  const focusCode: CodeType | null = focusRow?.state === 'ok' ? rowCode(focusRow) : null;
   const preview: StickerData | null = useMemo(() => {
     if (focusRow?.state === 'ok' && focusRow.info?.item) {
       const it = focusRow.info.item;
       return {
         name: it.name,
-        useBarcode: it.useBarcode,
+        useBarcode: rowCode(focusRow) === 'barcode',
+        codeType: rowCode(focusRow),
         barcode: focusRow.info.unit.sn,
         mfg: focusRow.mfg,
         exp: focusRow.exp!,
         round: focusRow.round!,
         maxRound: focusRow.info.unit.maxRound,
         staffName: currentStaff?.name ?? '',
+        showMfg: focusRow.showMfg,
+        showExp: focusRow.showExp,
       };
     }
     // ไม่มีรายการที่เลือก (เช่น เพิ่งพิมพ์เสร็จ) → ล้างตัวอย่าง
     const l = focusRow?.info?.lastLog;
-    return l ? { name: l.name, useBarcode: l.useBarcode, barcode: l.barcode, mfg: l.mfg, exp: l.exp, round: l.round, maxRound: l.maxRound } : null;
+    return l ? { name: l.name, useBarcode: l.useBarcode, codeType: l.codeType, barcode: l.barcode, mfg: l.mfg, exp: l.exp, round: l.round, maxRound: l.maxRound } : null;
   }, [focusRow, currentStaff]);
 
   return (
@@ -499,26 +506,50 @@ function SterilizeStation() {
               }
               extra={
                 <Space size={12}>
-                  {focusItem && (
-                    <Tooltip title={`ตั้งค่าของรายการ "${focusItem.name}" — มีผลกับทุกชิ้นของรายการนี้ (แก้ได้ที่หน้ารายการอุปกรณ์ด้วย)`}>
-                      <Space size={6}>
-                        <BarcodeOutlined style={{ color: focusItem.useBarcode ? '#2563eb' : '#94a3b8' }} />
-                        <Text type="secondary">บาร์โคด</Text>
-                        <Switch size="small" checked={focusItem.useBarcode} onChange={toggleBarcode} />
-                      </Space>
-                    </Tooltip>
-                  )}
                   {focusRow && <Text code>{focusRow.sn}</Text>}
                 </Space>
               }
             >
               {focusRow?.state === 'ok' && (
-                <Flex justify="flex-end" align="center" gap={8} style={{ marginBottom: 12 }}>
-                  <Text type="secondary">วันผลิต</Text>
-                  <MfgPicker value={focusRow.mfg} onChange={(v) => updateRow(focusRow.key, { mfg: v })} width={150} />
-                  <Tooltip title="ตั้งได้แยกทีละดวง (เฉพาะดวงที่เลือกอยู่) · ค่าเริ่มต้นคือวันนี้ · วันหมดอายุคำนวณตามอายุหลัง sterilize ของรายการนั้น">
-                    <QuestionCircleFilled style={{ color: '#cbd5e1' }} />
-                  </Tooltip>
+                <Flex justify="flex-end" align="center" gap={8} wrap style={{ marginBottom: 12 }}>
+                  {/* ชนิดรหัส + เปิด/ปิดบรรทัดวันที่บนสติ๊กเกอร์ — เฉพาะดวงที่เลือก */}
+                  <Flex vertical gap={8} style={{ marginRight: 'auto' }}>
+                  {focusCode && (
+                    // ค่าเริ่มต้นตามรายการอุปกรณ์ (ตั้งได้ที่หน้ารายการอุปกรณ์)
+                    <Segmented<CodeType>
+                      size="small"
+                      value={focusCode}
+                      onChange={(v) => (updateRow(focusRow.key, { codeType: v }), focusScan())}
+                      options={[
+                        { value: 'barcode', label: 'บาร์โคด', icon: <BarcodeOutlined /> },
+                        { value: 'qr', label: 'QR', icon: <QrcodeOutlined /> },
+                        { value: 'none', label: 'ไม่มีรหัส' },
+                      ]}
+                    />
+                  )}
+                  <Space size={6}>
+                      <Switch
+                        size="small"
+                        checked={focusRow.showMfg !== false}
+                        onChange={(on) => updateRow(focusRow.key, { showMfg: on })}
+                      />
+                      <Text type={focusRow.showMfg === false ? 'secondary' : undefined}>วันผลิต</Text>
+                      <Switch
+                        size="small"
+                        checked={focusRow.showExp !== false}
+                        onChange={(on) => updateRow(focusRow.key, { showExp: on })}
+                        style={{ marginLeft: 8 }}
+                      />
+                      <Text type={focusRow.showExp === false ? 'secondary' : undefined}>หมดอายุ</Text>
+                    </Space>
+                  </Flex>
+                  <Flex align="center" gap={8} style={{ whiteSpace: 'nowrap' }}>
+                    <Text type="secondary">วันผลิต</Text>
+                    <MfgPicker value={focusRow.mfg} onChange={(v) => updateRow(focusRow.key, { mfg: v })} width={135} />
+                    <Tooltip title="ตั้งได้แยกทีละดวง (เฉพาะดวงที่เลือกอยู่) · ค่าเริ่มต้นคือวันนี้ · วันหมดอายุคำนวณตามอายุหลัง sterilize ของรายการนั้น">
+                      <QuestionCircleFilled style={{ color: '#cbd5e1' }} />
+                    </Tooltip>
+                  </Flex>
                 </Flex>
               )}
               <div className="sticker-preview-wrap">
@@ -550,6 +581,15 @@ function SterilizeStation() {
                   ? 'แสดงดวงล่าสุดที่เคยพิมพ์ — ชิ้นนี้พิมพ์รอบใหม่ไม่ได้'
                   : 'ขนาดจริง 5.0 × 2.5 ซม. · กรอบสีส้มเป็นของม้วนสติ๊กเกอร์ ไม่ได้พิมพ์ออกไป'}
               </Text>
+              {focusCode === 'qr' && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginTop: 12 }}
+                  title="เครื่องยิงบาร์โคดแบบเลเซอร์ (1D) อ่าน QR ไม่ได้"
+                  description="ต้องใช้เครื่องยิงแบบกล้อง (2D) — ลองพิมพ์ทดสอบ QR (ปุ่ม ⚙) แล้วยิงดูก่อนใช้จริง"
+                />
+              )}
             </Card>
 
             <Card
@@ -692,6 +732,14 @@ function QueueItem({
                   <MfgPicker value={row.mfg} onChange={(v) => onChange({ mfg: v })} size="small" width={130} />
                 </span>
                 <Text type="secondary">หมดอายุ {thaiDate(row.exp)}</Text>
+                {(row.showMfg === false || row.showExp === false) && (
+                  <Tag style={{ marginInlineEnd: 0 }}>
+                    ไม่พิมพ์{[row.showMfg === false && 'วันผลิต', row.showExp === false && 'หมดอายุ'].filter(Boolean).join(' / ')}
+                  </Tag>
+                )}
+                {row.codeType && info?.item && row.codeType !== (info.item.useBarcode ? 'barcode' : 'none') && (
+                  <Tag style={{ marginInlineEnd: 0 }}>{row.codeType === 'qr' ? 'QR' : CODE_TYPE_LABEL[row.codeType]}</Tag>
+                )}
               </Space>
               {row.skipped && (
                 <div onClick={stop} style={{ marginTop: 6 }}>

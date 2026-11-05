@@ -56,9 +56,16 @@ export function normalizeLog(raw: Partial<PrintLog> & Record<string, unknown>): 
     sourceId: raw.sourceId != null ? Number(raw.sourceId) : undefined,
     skippedFrom: raw.skippedFrom != null ? Number(raw.skippedFrom) : undefined,
     note: raw.note ? String(raw.note) : undefined,
+    codeType: raw.codeType === 'barcode' || raw.codeType === 'qr' || raw.codeType === 'none' ? raw.codeType : undefined,
+    showMfg: raw.showMfg === false ? false : undefined,
+    showExp: raw.showExp === false ? false : undefined,
     staffId: raw.staffId != null ? Number(raw.staffId) : undefined,
     staffName: raw.staffName ? String(raw.staffName) : undefined,
     time: String(raw.time ?? ''),
+    voidedAt: raw.voidedAt ? String(raw.voidedAt) : undefined,
+    voidReason: raw.voidReason ? String(raw.voidReason) : undefined,
+    voidByStaffId: raw.voidByStaffId != null ? Number(raw.voidByStaffId) : undefined,
+    voidBy: raw.voidBy ? String(raw.voidBy) : undefined,
   };
 }
 

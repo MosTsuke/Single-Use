@@ -1,11 +1,12 @@
 'use client';
 
-import { DeleteOutlined, HistoryOutlined, PrinterOutlined } from '@ant-design/icons';
+import { DeleteOutlined, HistoryOutlined, PrinterOutlined, RollbackOutlined } from '@ant-design/icons';
 import { Alert, Button, Descriptions, Drawer, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
 import BulkDisposeModal from '@/components/BulkDisposeModal';
+import VoidPrintModal from '@/components/VoidPrintModal';
 import DisposeModal from '@/components/DisposeModal';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
 import { CycleBar, StatusTag } from '@/components/UnitBits';
@@ -29,10 +30,11 @@ interface Props {
 
 /** ตารางอุปกรณ์รายชิ้น + หน้าต่างประวัติ / ทำลาย / ลงทะเบียนทดแทน (ใช้ทั้งหน้าอุปกรณ์รายชิ้นและใต้รายการอุปกรณ์) */
 export default function UnitTable({ rows, showItem = true, size, pagination, emptyText, selectable = false }: Props) {
-  const { units, getUnitInfo } = useStore();
+  const { units, getUnitInfo, voidableLog } = useStore();
   const [viewing, setViewing] = useState<Unit | null>(null);
   const [disposing, setDisposing] = useState<Unit | null>(null);
   const [replacing, setReplacing] = useState<Unit | null>(null);
+  const [voiding, setVoiding] = useState<Unit | null>(null);
   // เลือกหลายชิ้นเพื่อทำลายพร้อมกัน (เลือกได้เฉพาะชิ้นที่ยังไม่ถูกทำลาย)
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -101,13 +103,18 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
     {
       title: '',
       key: 'act',
-      width: 190,
+      width: 220,
       align: 'right',
       render: (_, r) => (
         <Space size={0}>
           <Tooltip title="ประวัติ">
             <Button type="text" icon={<HistoryOutlined />} onClick={() => setViewing(r.unit)} />
           </Tooltip>
+          {voidableLog(r.unit) && (
+            <Tooltip title={`ยกเลิกใบที่พิมพ์ผิด (รอบ ${voidableLog(r.unit)!.round}/${r.unit.maxRound}) — คืนรอบเดิม`}>
+              <Button type="text" icon={<RollbackOutlined />} onClick={() => setVoiding(r.unit)} aria-label="ยกเลิกใบที่พิมพ์ผิด" />
+            </Tooltip>
+          )}
           {r.nextRound != null && (
             <Tooltip title="พิมพ์สติ๊กเกอร์">
               <Link href={`/print?sn=${encodeURIComponent(r.unit.sn)}`}>
@@ -176,7 +183,7 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
         size={size}
         columns={columns}
         dataSource={rows}
-        scroll={{ x: showItem ? 1050 : 870 }}
+        scroll={{ x: showItem ? 1080 : 900 }}
         pagination={pagination}
         locale={emptyText ? { emptyText } : undefined}
       />
@@ -239,6 +246,11 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
               ประวัติ
             </Typography.Title>
             <UnitHistory unit={viewingInfo.unit} />
+            {voidableLog(viewingInfo.unit) && (
+              <Button block icon={<RollbackOutlined />} onClick={() => setVoiding(viewingInfo.unit)} style={{ marginBottom: 8 }}>
+                ยกเลิกใบที่พิมพ์ผิด (รอบ {voidableLog(viewingInfo.unit)!.round}/{viewingInfo.unit.maxRound})
+              </Button>
+            )}
             {viewingInfo.status !== 'disposed' && (
               <Button danger block icon={<DeleteOutlined />} onClick={() => setDisposing(viewingInfo.unit)}>
                 บันทึกทำลาย
@@ -254,6 +266,7 @@ export default function UnitTable({ rows, showItem = true, size, pagination, emp
         defaultReplace={false}
         onDisposed={(u, replace) => replace && setReplacing(u)}
       />
+      <VoidPrintModal unit={voiding} onClose={() => setVoiding(null)} />
       <BulkDisposeModal
         rows={selectedRows}
         open={bulkOpen}

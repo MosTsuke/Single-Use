@@ -18,7 +18,7 @@ export default function PrinterSettingsModal({ open, onClose }: { open: boolean;
     if (open) setDraft(settings);
   }, [open, settings]);
 
-  const testPrint = () => {
+  const testPrint = (codeType: 'barcode' | 'qr' = 'barcode') => {
     // บันทึกค่าก่อน เพื่อให้ดวงทดสอบใช้ตำแหน่งล่าสุด — ดวงทดสอบไม่ถูกบันทึกเป็นประวัติ
     setSettings(draft);
     const today = todayISO();
@@ -27,7 +27,8 @@ export default function PrinterSettingsModal({ open, onClose }: { open: boolean;
         printStickers([
           {
             name: 'ทดสอบการพิมพ์',
-            useBarcode: true,
+            useBarcode: codeType === 'barcode',
+            codeType,
             barcode: 'TEST-000000',
             mfg: today,
             exp: addDays(today, 30),
@@ -77,9 +78,12 @@ export default function PrinterSettingsModal({ open, onClose }: { open: boolean;
       width={560}
       footer={
         <Flex justify="space-between">
-          <Button icon={<PrinterOutlined />} onClick={testPrint}>
-            พิมพ์ทดสอบ
-          </Button>
+          <Space>
+            <Button icon={<PrinterOutlined />} onClick={() => testPrint('barcode')}>
+              พิมพ์ทดสอบ
+            </Button>
+            <Button onClick={() => testPrint('qr')}>ทดสอบ QR</Button>
+          </Space>
           <Space>
             <Button onClick={onClose}>ยกเลิก</Button>
             <Button type="primary" onClick={save}>

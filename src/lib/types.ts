@@ -74,18 +74,44 @@ export interface PrintLog {
   skippedFrom?: number;
   /** หมายเหตุประกอบ (บังคับเมื่อพิมพ์ข้ามรอบ) */
   note?: string;
+  /** false = ดวงนี้ไม่พิมพ์วันผลิต / วันหมดอายุ (ไม่ระบุ = พิมพ์) — พิมพ์ซ้ำใช้ค่าเดิม */
+  showMfg?: boolean;
+  showExp?: boolean;
+  /** ชนิดรหัสที่พิมพ์บนดวงนี้ (ข้อมูลเก่าไม่มี → ดู useBarcode) */
+  codeType?: CodeType;
   /** เจ้าหน้าที่ผู้พิมพ์ (พิมพ์ซ้ำใช้ชื่อเดิมของดวงต้นฉบับ) */
   staffId?: number;
   /** ชื่อเจ้าหน้าที่ ณ ตอนพิมพ์ — เก็บไว้ในประวัติแม้แก้ชื่อ/ลบภายหลัง */
   staffName?: string;
   /** YYYY-MM-DD HH:mm ตามเวลาเครื่อง */
   time: string;
+  /**
+   * ยกเลิกใบที่พิมพ์ผิด — ดวงยังอยู่ในประวัติแต่ไม่นับรอบ (รอบของชิ้นกลับไปเป็นค่าก่อนหน้า)
+   * พิมพ์ซ้ำของดวงนั้นถูกยกเลิกตามไปด้วย
+   */
+  voidedAt?: string;
+  voidReason?: string;
+  voidByStaffId?: number;
+  voidBy?: string;
 }
+
+/** ดวงที่ยังมีผล (ไม่ถูกยกเลิก) */
+export const isActiveLog = (l: PrintLog) => !l.voidedAt;
+
+/** รหัสบนสติ๊กเกอร์: บาร์โคด 1 มิติ / QR / ไม่มี (แสดง SN เป็นตัวหนังสือ) */
+export type CodeType = 'barcode' | 'qr' | 'none';
+export const CODE_TYPE_LABEL: Record<CodeType, string> = { barcode: 'บาร์โคด', qr: 'QR', none: 'ไม่มี' };
+
+/** ชนิดรหัสของดวงนั้น — ข้อมูลเก่าที่ไม่มี codeType ใช้ useBarcode */
+export const codeOf = (d: { codeType?: CodeType; useBarcode: boolean }): CodeType =>
+  d.codeType ?? (d.useBarcode ? 'barcode' : 'none');
 
 /** ข้อมูลที่ใช้วาดสติ๊กเกอร์ */
 export interface StickerData {
   name: string;
   useBarcode: boolean;
+  /** ชนิดรหัสของดวงนี้ (ไม่ระบุ = ตาม useBarcode) */
+  codeType?: CodeType;
   barcode: string;
   mfg: string;
   exp: string;
@@ -93,6 +119,9 @@ export interface StickerData {
   maxRound: number;
   /** ชื่อเจ้าหน้าที่ผู้พิมพ์ */
   staffName?: string;
+  /** false = ไม่พิมพ์บรรทัดวันผลิต / หมดอายุ (ไม่ระบุ = พิมพ์) */
+  showMfg?: boolean;
+  showExp?: boolean;
 }
 
 export interface AppData {

@@ -8,7 +8,7 @@ export const normSn = (sn: string) => sn.trim().toUpperCase();
  */
 export function cyclesUsed(logs: PrintLog[], unitId: number): number {
   let n = 0;
-  for (const l of logs) if (l.unitId === unitId && !l.isReprint && l.round > n) n = l.round;
+  for (const l of logs) if (l.unitId === unitId && !l.isReprint && !l.voidedAt && l.round > n) n = l.round;
   return n;
 }
 

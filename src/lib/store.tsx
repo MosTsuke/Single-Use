@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { nowStamp } from './date';
 import { storage } from './storage';
-import type { AppData, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
+import type { AppData, CodeType, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
 import { cyclesUsed, generateSns, normSn, unitStatus } from './units';
 
 export interface UnitInfo {
@@ -22,7 +22,10 @@ interface StoreValue {
   ready: boolean;
   items: MasterItem[];
   units: Unit[];
+  /** ประวัติการพิมพ์ที่มีผล (ไม่รวมดวงที่ถูกยกเลิก) — ใช้นับรอบ รายงาน แดชบอร์ด */
   logs: PrintLog[];
+  /** ประวัติการพิมพ์ทั้งหมด รวมดวงที่ถูกยกเลิก — ใช้แสดงประวัติ / สำรองข้อมูล */
+  allLogs: PrintLog[];
   staff: Staff[];
   saveError: string | null;
 
@@ -46,12 +49,16 @@ interface StoreValue {
    * opts.round = พิมพ์ข้ามไปรอบที่ระบุ (ต้อง ≥ รอบถัดไป และ ≤ รอบสูงสุด) ต้องมี opts.note
    * staffId = เจ้าหน้าที่ผู้พิมพ์ (บังคับ)
    */
-  sterilize: (unitId: number, mfg: string, exp: string, opts: { staffId: number; round?: number; note?: string }) => Result<PrintLog>;
-  /** พิมพ์ซ้ำดวงเดิม — override.useBarcode ใช้กับดวงนี้ดวงเดียว */
-  createReprint: (logId: number, override?: { useBarcode?: boolean }) => PrintLog | null;
+  sterilize: (unitId: number, mfg: string, exp: string, opts: { staffId: number; round?: number; note?: string; showMfg?: boolean; showExp?: boolean; codeType?: CodeType }) => Result<PrintLog>;
+  /** พิมพ์ซ้ำดวงเดิม — override.codeType ใช้กับดวงนี้ดวงเดียว */
+  createReprint: (logId: number, override?: { codeType?: CodeType }) => PrintLog | null;
   replaceAll: (data: AppData) => void;
   /** ย้อนการพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์) — ลบได้เฉพาะดวงล่าสุดของชิ้นนั้น */
   removeLogs: (ids: number[]) => Result<void>;
+  /** ยกเลิกใบที่พิมพ์ผิด (เฉพาะดวงล่าสุดของชิ้นนั้น) — คืนรอบเดิม และบันทึกการยกเลิกในประวัติ */
+  voidPrint: (logId: number, input: { reason: string; staffId: number }) => Result<PrintLog>;
+  /** ดวงล่าสุดของชิ้นที่ยกเลิกได้ (ไม่มี = ยกเลิกไม่ได้) */
+  voidableLog: (unit: Unit) => PrintLog | undefined;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -63,7 +70,7 @@ function buildInfo(d: AppData, unit: Unit): UnitInfo {
   const status = unitStatus(unit, used);
   let lastLog: PrintLog | undefined;
   for (let i = d.logs.length - 1; i >= 0; i--) {
-    if (d.logs[i].unitId === unit.id) {
+    if (d.logs[i].unitId === unit.id && !d.logs[i].voidedAt) {
       lastLog = d.logs[i];
       break;
     }
@@ -260,7 +267,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         unitId: u.id,
         itemId: u.itemId,
         name: item?.name ?? '(รายการถูกลบ)',
-        useBarcode: item?.useBarcode ?? true,
+        // ชนิดรหัสของดวงนี้ (ไม่ระบุ = ตามค่าของรายการอุปกรณ์)
+        codeType: opts.codeType ?? ((item?.useBarcode ?? true) ? 'barcode' : 'none'),
+        useBarcode: (opts.codeType ?? ((item?.useBarcode ?? true) ? 'barcode' : 'none')) === 'barcode',
         barcode: u.sn,
         mfg,
         exp,
@@ -269,6 +278,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         isReprint: false,
         skippedFrom: skipped ? info.nextRound : undefined,
         note: note || undefined,
+        showMfg: opts.showMfg === false ? false : undefined,
+        showExp: opts.showExp === false ? false : undefined,
         staffId: staff.id,
         staffName: staff.name,
         time: nowStamp(),
@@ -280,7 +291,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const createReprint = useCallback(
-    (logId: number, override?: { useBarcode?: boolean }) => {
+    (logId: number, override?: { codeType?: CodeType }) => {
       const cur = ref.current;
       const src = cur.logs.find((l) => l.id === logId);
       if (!src) return null;
@@ -288,7 +299,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...src,
         id: nextId(cur.logs),
         sourceId: src.sourceId ?? src.id,
-        useBarcode: override?.useBarcode ?? src.useBarcode,
+        codeType: override?.codeType ?? src.codeType,
+        useBarcode: override?.codeType ? override.codeType === 'barcode' : src.useBarcode,
         isReprint: true, // ใช้ SN วันที่ และรอบเดิม ไม่นับรอบเพิ่ม
         time: nowStamp(),
       };
@@ -299,6 +311,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const replaceAll = useCallback((d: AppData) => commit(d), [commit]);
+
+  const findVoidable = (d: AppData, unit: Unit): PrintLog | undefined => {
+    if (unit.disposedAt) return undefined;
+    let last: PrintLog | undefined;
+    for (const l of d.logs) if (l.unitId === unit.id && !l.isReprint && !l.voidedAt && (!last || l.id > last.id)) last = l;
+    return last;
+  };
+  const voidableLog = useCallback((unit: Unit) => findVoidable(data, unit), [data]);
+
+  const voidPrint = useCallback<StoreValue['voidPrint']>(
+    (logId, { reason, staffId }) => {
+      const cur = ref.current;
+      const log = cur.logs.find((l) => l.id === logId);
+      if (!log) return { ok: false, error: 'ไม่พบใบที่พิมพ์' };
+      if (log.voidedAt) return { ok: false, error: 'ใบนี้ถูกยกเลิกไปแล้ว' };
+      if (log.isReprint) return { ok: false, error: 'ยกเลิกได้เฉพาะใบที่พิมพ์ปกติ (พิมพ์ซ้ำจะถูกยกเลิกตามใบหลัก)' };
+      const unit = cur.units.find((u) => u.id === log.unitId);
+      if (!unit) return { ok: false, error: 'ไม่พบอุปกรณ์' };
+      if (unit.disposedAt) return { ok: false, error: 'ชิ้นนี้ถูกทำลายแล้ว ยกเลิกการพิมพ์ไม่ได้' };
+      if (findVoidable(cur, unit)?.id !== log.id) return { ok: false, error: 'ยกเลิกได้เฉพาะใบล่าสุดของชิ้นนี้' };
+      const why = reason.trim();
+      if (!why) return { ok: false, error: 'กรุณาระบุเหตุผลที่ยกเลิก' };
+      const staff = cur.staff.find((s) => s.id === staffId);
+      if (!staff) return { ok: false, error: 'กรุณาเลือกเจ้าหน้าที่ผู้ยกเลิก' };
+      const mark = { voidedAt: nowStamp(), voidReason: why, voidByStaffId: staff.id, voidBy: staff.name };
+      const logs = cur.logs.map((l) => (l.id === log.id || (l.isReprint && l.sourceId === log.id) ? { ...l, ...mark } : l));
+      commit({ ...cur, logs });
+      return { ok: true, value: { ...log, ...mark } };
+    },
+    [commit],
+  );
 
   const removeLogs = useCallback<StoreValue['removeLogs']>(
     (ids) => {
@@ -317,12 +360,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  const activeLogs = useMemo(() => data.logs.filter((l) => !l.voidedAt), [data.logs]);
+
   const value = useMemo<StoreValue>(
     () => ({
       ready,
       items: data.items,
       units: data.units,
-      logs: data.logs,
+      logs: activeLogs,
+      allLogs: data.logs,
       staff: data.staff,
       saveError,
       getUnitInfo,
@@ -340,8 +386,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       createReprint,
       replaceAll,
       removeLogs,
+      voidPrint,
+      voidableLog,
     }),
-    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs],
+    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs, voidPrint, voidableLog, activeLogs],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
