@@ -9,6 +9,7 @@ import {
   LoginOutlined,
   LogoutOutlined,
   SafetyCertificateOutlined,
+  SettingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PrinterOutlined,
@@ -20,7 +21,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AdminGateCard, AdminLoginModal } from '@/components/AdminLogin';
 import { IDLE_MINUTES, useAuth } from '@/lib/auth';
-import { BRAND } from '@/lib/brand';
+import { useBrand } from '@/lib/brand';
 import { useEffect, useState, type ReactNode } from 'react';
 import { dayjs } from '@/lib/date';
 import { useStore } from '@/lib/store';
@@ -39,6 +40,7 @@ const NAV = [
 const ADMIN_NAV = [
   { key: '/items', icon: <DatabaseOutlined />, label: 'รายการอุปกรณ์', desc: 'ตั้งค่าอายุหลัง sterilize รอบสูงสุด และคำนำหน้า SN' },
   { key: '/staff', icon: <TeamOutlined />, label: 'รายชื่อเจ้าหน้าที่', desc: 'รายชื่อผู้พิมพ์สติ๊กเกอร์ ใช้เลือกก่อนพิมพ์และแสดงบนสติ๊กเกอร์' },
+  { key: '/settings', icon: <SettingOutlined />, label: 'ตั้งค่า', desc: 'โลโก้และชื่อโรงพยาบาล / บริษัท ที่แสดงในแถบเมนู' },
   { key: '/admins', icon: <SafetyCertificateOutlined />, label: 'บัญชีแอดมิน', desc: 'ผู้ที่เข้าหน้าตั้งค่าได้ (รายการอุปกรณ์ / รายชื่อเจ้าหน้าที่)' },
 ];
 
@@ -49,6 +51,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const { ready, saveError } = useStore();
   const auth = useAuth();
+  const { brand: BRAND } = useBrand();
   const router = useRouter();
   const [loginOpen, setLoginOpen] = useState(false);
   const isAdmin = !!auth.current;
@@ -113,7 +116,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <Flex vertical align="center" gap={6} style={{ padding: '12px 16px' }}>
               <Text style={{ color: '#64748b', fontSize: 11 }}>พัฒนาโดย</Text>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={BRAND.companyLogo} alt={BRAND.companyName} style={{ width: '100%', maxWidth: 180, maxHeight: 64, objectFit: 'contain' }} />
+              <img
+                src={BRAND.companyLogo}
+                alt={BRAND.companyName}
+                title={BRAND.companyName}
+                // โลโก้มีตัวอักษรสีเขียวเข้ม → วางบนพื้นขาวให้อ่านออกบนแถบเมนูสีเข้ม
+                style={{ width: '100%', maxWidth: 196, maxHeight: 72, objectFit: 'contain', background: '#fff', borderRadius: 8, padding: '6px 10px' }}
+              />
             </Flex>
           )}
           {/* ล่างสุดของแถบเมนู: เข้า/ออกจากระบบแอดมิน */}

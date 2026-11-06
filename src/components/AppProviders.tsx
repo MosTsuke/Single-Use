@@ -5,6 +5,7 @@ import thTH from 'antd/locale/th_TH';
 import type { ReactNode } from 'react';
 import '@/lib/date'; // ตั้งค่า dayjs (ภาษาไทย + พ.ศ.)
 import { AuthProvider } from '@/lib/auth';
+import { BrandProvider } from '@/lib/brand';
 import { PrintProvider } from '@/lib/print';
 import { StoreProvider } from '@/lib/store';
 
@@ -34,9 +35,11 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     >
       <App>
         <AuthProvider>
-          <StoreProvider>
-            <PrintProvider>{children}</PrintProvider>
-          </StoreProvider>
+          <BrandProvider>
+            <StoreProvider>
+              <PrintProvider>{children}</PrintProvider>
+            </StoreProvider>
+          </BrandProvider>
         </AuthProvider>
       </App>
     </ConfigProvider>
