@@ -9,6 +9,17 @@ export interface Staff {
   active: boolean;
 }
 
+/** หน่วยงานที่นำอุปกรณ์ไปใช้ (เช่น ห้องผ่าตัด, ER) */
+export interface Department {
+  id: number;
+  /** ชื่อที่แสดงบนสติ๊กเกอร์ ("ใช้ที่ ...") */
+  name: string;
+  /** รหัส/ชื่อย่อ (ไม่บังคับ) ใช้ค้นหาในดรอปดาวน์ */
+  code?: string;
+  /** ปิดใช้งาน = ไม่แสดงในดรอปดาวน์ แต่ประวัติเดิมยังอยู่ */
+  active: boolean;
+}
+
 /** ประเภทอุปกรณ์ (ข้อมูลถาวร) เช่น "สาย Suction" */
 export interface MasterItem {
   id: number;
@@ -79,6 +90,11 @@ export interface PrintLog {
   showExp?: boolean;
   /** ชนิดรหัสที่พิมพ์บนดวงนี้ (ข้อมูลเก่าไม่มี → ดู useBarcode) */
   codeType?: CodeType;
+  /** หน่วยงานที่นำไปใช้ (ไม่บังคับ) — ชื่อเก็บไว้ ณ ตอนพิมพ์ */
+  departmentId?: number;
+  departmentName?: string;
+  /** false = ไม่พิมพ์บรรทัด "ใช้ที่" บนสติ๊กเกอร์ (แต่ยังบันทึกหน่วยงาน) */
+  showDept?: boolean;
   /** เจ้าหน้าที่ผู้พิมพ์ (พิมพ์ซ้ำใช้ชื่อเดิมของดวงต้นฉบับ) */
   staffId?: number;
   /** ชื่อเจ้าหน้าที่ ณ ตอนพิมพ์ — เก็บไว้ในประวัติแม้แก้ชื่อ/ลบภายหลัง */
@@ -119,6 +135,9 @@ export interface StickerData {
   maxRound: number;
   /** ชื่อเจ้าหน้าที่ผู้พิมพ์ */
   staffName?: string;
+  /** หน่วยงานที่นำไปใช้ — แสดงเป็นบรรทัด "ใช้ที่ ..." (ไม่มี/ปิด = ไม่แสดง) */
+  departmentName?: string;
+  showDept?: boolean;
   /** false = ไม่พิมพ์บรรทัดวันผลิต / หมดอายุ (ไม่ระบุ = พิมพ์) */
   showMfg?: boolean;
   showExp?: boolean;
@@ -129,6 +148,7 @@ export interface AppData {
   units: Unit[];
   logs: PrintLog[];
   staff: Staff[];
+  departments: Department[];
 }
 
 /** สาเหตุที่เลือกได้เมื่อทำลายก่อนครบรอบ */

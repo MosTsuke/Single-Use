@@ -1,4 +1,4 @@
-import type { AppData, MasterItem, PrintLog, Staff, Unit } from './types';
+import type { AppData, Department, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
  * ชั้นจัดเก็บข้อมูล — ตอนนี้ใช้ localStorage ของเบราว์เซอร์
@@ -14,6 +14,7 @@ const KEY_ITEMS = 'sticker_masterItems';
 const KEY_UNITS = 'sticker_units';
 const KEY_LOGS = 'sticker_printLogs';
 const KEY_STAFF = 'sticker_staff';
+const KEY_DEPTS = 'sticker_departments';
 
 export const DEFAULT_ITEMS: MasterItem[] = [
   { id: 1, name: 'สาย Suction', shelf: 61, maxRound: 4, useBarcode: true, snPrefix: 'SUC' },
@@ -59,6 +60,9 @@ export function normalizeLog(raw: Partial<PrintLog> & Record<string, unknown>): 
     codeType: raw.codeType === 'barcode' || raw.codeType === 'qr' || raw.codeType === 'none' ? raw.codeType : undefined,
     showMfg: raw.showMfg === false ? false : undefined,
     showExp: raw.showExp === false ? false : undefined,
+    departmentId: raw.departmentId != null ? Number(raw.departmentId) : undefined,
+    departmentName: raw.departmentName ? String(raw.departmentName) : undefined,
+    showDept: raw.showDept === false ? false : undefined,
     staffId: raw.staffId != null ? Number(raw.staffId) : undefined,
     staffName: raw.staffName ? String(raw.staffName) : undefined,
     time: String(raw.time ?? ''),
@@ -69,7 +73,7 @@ export function normalizeLog(raw: Partial<PrintLog> & Record<string, unknown>): 
   };
 }
 
-export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: unknown; staff?: unknown }): AppData {
+export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: unknown; staff?: unknown; departments?: unknown }): AppData {
   const items: MasterItem[] = Array.isArray(raw.items)
     ? (raw.items as Partial<MasterItem>[]).map((i) => ({
         id: Number(i.id),
@@ -105,7 +109,17 @@ export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: un
         }))
         .filter((s) => s.name)
     : [];
-  return { items, units, logs, staff };
+  const departments: Department[] = Array.isArray(raw.departments)
+    ? (raw.departments as Partial<Department>[])
+        .map((d) => ({
+          id: Number(d.id),
+          name: String(d.name ?? '').trim(),
+          code: d.code ? String(d.code).trim() : undefined,
+          active: d.active !== false,
+        }))
+        .filter((d) => d.name)
+    : [];
+  return { items, units, logs, staff, departments };
 }
 
 class LocalStorageDataStorage implements DataStorage {
@@ -115,6 +129,7 @@ class LocalStorageDataStorage implements DataStorage {
       units: readJSON<Unit[]>(KEY_UNITS) ?? [],
       logs: readJSON<PrintLog[]>(KEY_LOGS) ?? [],
       staff: readJSON<Staff[]>(KEY_STAFF) ?? [],
+      departments: readJSON<Department[]>(KEY_DEPTS) ?? [],
     });
   }
 
@@ -123,6 +138,7 @@ class LocalStorageDataStorage implements DataStorage {
     window.localStorage.setItem(KEY_UNITS, JSON.stringify(data.units));
     window.localStorage.setItem(KEY_LOGS, JSON.stringify(data.logs));
     window.localStorage.setItem(KEY_STAFF, JSON.stringify(data.staff));
+    window.localStorage.setItem(KEY_DEPTS, JSON.stringify(data.departments));
   }
 }
 

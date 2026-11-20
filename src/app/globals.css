@@ -44,13 +44,27 @@ body {
   justify-content: center;
   border: 0.2mm dashed #000;
 }
+.sticker > *,
+.sticker .st-qr-main > *,
+.sticker .st-qr-top > * {
+  flex-shrink: 0;
+}
 .sticker .st-name {
   /* line-height เผื่อสระบน/ล่างของภาษาไทย (ไม้โท, สระอุ) ไม่ให้ถูกตัด */
   font-size: 3.3mm;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.35;
   text-align: center;
-  white-space: nowrap;
+  /* ชื่อยาว: ไม่เกิน 2 บรรทัด เกินกว่านั้นตัดด้วย … — โปรแกรมย่อตัวอักษรให้ 2 บรรทัดพอดีพื้นที่ (ดู Sticker.tsx) */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-overflow: ellipsis;
+  flex: 0 1 auto !important;
+  min-height: 0;
   overflow: hidden;
   margin-top: 0.1mm;
 }
@@ -87,10 +101,7 @@ body {
 }
 .sticker.no-barcode .st-name {
   font-size: 4.2mm;
-  line-height: 1.35;
   margin-top: 0.6mm;
-  white-space: normal;
-  max-height: 11.4mm;
 }
 /* ชื่อเจ้าหน้าที่ผู้พิมพ์ — บรรทัดล่างสุด ยาวเกินตัดด้วย … */
 .sticker .st-staff {
@@ -152,10 +163,7 @@ body {
 }
 .sticker .st-qr-main .st-name {
   font-size: 3.6mm;
-  line-height: 1.35;
-  white-space: normal;
   text-align: left;
-  max-height: 9.8mm;
   margin-top: 0;
 }
 .sticker .st-qr-main .st-sn {
@@ -165,6 +173,54 @@ body {
 }
 .sticker.st-qr-layout .st-staff-up {
   margin-right: 0; /* "รอบ" อยู่ใต้ QR ไม่ได้อยู่ขวา จึงไม่ต้องเว้นที่ */
+}
+
+/* ----- มีบรรทัด "ใช้ที่ ..." (4 บรรทัด): ย่อตัวอักษร/บาร์โคดลงเล็กน้อยให้พอดี 25 มม. ----- */
+.sticker.st-dept-mode .st-info {
+  --fs: 1.95mm;
+}
+.sticker.st-dept-mode .st-lines {
+  min-height: calc(var(--line) * 2 + var(--staff) * 2);
+}
+.sticker.st-dept-mode .st-round {
+  bottom: calc(var(--staff) * 2); /* ยังตรงกับบรรทัด "หมดอายุ" เหมือนเดิม */
+}
+.sticker.st-dept-mode .st-barcode,
+.sticker.st-dept-mode .st-error {
+  height: 4.2mm;
+}
+.sticker.st-dept-mode.no-barcode .st-info {
+  --fs: 2.2mm;
+}
+.sticker.st-dept-mode.st-qr-layout .st-round {
+  bottom: auto;
+}
+
+/* แบบ QR + "ใช้ที่": บรรทัดหน่วยงานเต็มความกว้างใต้ QR/ข้อความ */
+.sticker.st-qr-dept {
+  flex-direction: column;
+  gap: 0;
+}
+.sticker .st-qr-top {
+  display: flex;
+  flex-direction: row;
+  gap: 1.6mm;
+  flex: 1;
+  min-height: 0;
+}
+.sticker.st-qr-dept .st-lines {
+  /* "ใช้ที่" ไม่ได้อยู่ในคอลัมน์นี้ → เหลือ 3 บรรทัด */
+  min-height: calc(var(--line) * 2 + var(--staff));
+}
+.sticker .st-qr-deptline {
+  font-size: 2.1mm;
+  margin-top: 0;
+}
+
+/* QR อยู่ด้านขวา (อ่านข้อความจากซ้ายก่อน แล้วใช้พื้นที่ว่างด้านขวาให้ QR) */
+.sticker.st-qr-layout .st-qr-col,
+.sticker .st-qr-top .st-qr-col {
+  order: 2;
 }
 
 /* ตัวอย่างบนจอ: ขยาย 2 เท่า และจำลองกรอบสีส้มของม้วนสติ๊กเกอร์ */

@@ -78,9 +78,14 @@ interface QueueRow {
   showExp?: boolean;
   /** ชนิดรหัสของดวงนี้ (ไม่ระบุ = ตามค่าเริ่มต้นของรายการอุปกรณ์) */
   codeType?: CodeType;
+  /** หน่วยงานที่นำไปใช้ (ไม่บังคับ) และพิมพ์บรรทัด "ใช้ที่" หรือไม่ */
+  departmentId?: number;
+  showDept?: boolean;
 }
 
 interface Resolved extends QueueRow {
+  /** ชื่อหน่วยงานของแถวนี้ (ถ้าเลือก) */
+  deptName?: string;
   state: RowState;
   info?: UnitInfo;
   /** รอบถัดไปตามลำดับ (ค่าต่ำสุดที่เลือกได้) */
@@ -104,7 +109,10 @@ export default function PrintPage() {
 }
 
 function SterilizeStation() {
-  const { units, staff, findUnitBySn, getUnitInfo, sterilize, updateItem, removeLogs } = useStore();
+  const { units, staff, departments, findUnitBySn, getUnitInfo, sterilize, updateItem, removeLogs } = useStore();
+  const activeDepts = useMemo(() => departments.filter((d) => d.active), [departments]);
+  // หน่วยงานล่าสุดที่เลือก → ใช้เป็นค่าเริ่มต้นของดวงถัดไปที่ยิงเข้ามา (เปลี่ยนรายดวงได้)
+  const lastDeptId = useRef<number | undefined>(undefined);
   const printStickers = usePrintStickers();
   const { settings: printer } = usePrinterSettings();
   const { message } = App.useApp();
@@ -192,9 +200,10 @@ function SterilizeStation() {
         skipped,
         needsNote: skipped && !row.note?.trim(),
         exp: dayjs(row.mfg).add(info.item.shelf, 'day').format(ISO_DATE),
+        deptName: row.departmentId != null ? departments.find((d) => d.id === row.departmentId)?.name : undefined,
       };
     },
-    [findUnitBySn, getUnitInfo],
+    [findUnitBySn, getUnitInfo, departments],
   );
 
   const rows = useMemo(() => queue.map(resolve), [queue, resolve]);
@@ -210,7 +219,16 @@ function SterilizeStation() {
     const logs: PrintLog[] = [];
     for (const r of list) {
       if (!r.info || !r.exp) continue;
-      const res = sterilize(r.info.unit.id, r.mfg, r.exp, { staffId, round: r.round, note: r.note, showMfg: r.showMfg, showExp: r.showExp, codeType: rowCode(r) });
+      const res = sterilize(r.info.unit.id, r.mfg, r.exp, {
+        staffId,
+        round: r.round,
+        note: r.note,
+        showMfg: r.showMfg,
+        showExp: r.showExp,
+        codeType: rowCode(r),
+        departmentId: r.departmentId,
+        showDept: r.showDept,
+      });
       if (res.ok) logs.push(res.value);
       else message.error(`${r.sn}: ${res.error}`);
     }
@@ -230,7 +248,7 @@ function SterilizeStation() {
       setSelected(dup.key);
       return;
     }
-    const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO() };
+    const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO(), departmentId: lastDeptId.current };
     const r = resolve(row);
     beep(r.state === 'ok' ? 'ok' : 'error');
     setQueue((q) => [...q, row]);
@@ -243,7 +261,7 @@ function SterilizeStation() {
     const sn = params.get('sn');
     if (sn && !fromParam.current) {
       fromParam.current = true;
-      const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO() };
+      const row: QueueRow = { key: ++keySeq.current, sn, mfg: todayISO(), departmentId: lastDeptId.current };
       setQueue([row]);
       setSelected(row.key);
     }
@@ -317,6 +335,8 @@ function SterilizeStation() {
         staffName: currentStaff?.name ?? '',
         showMfg: focusRow.showMfg,
         showExp: focusRow.showExp,
+        departmentName: focusRow.deptName,
+        showDept: focusRow.showDept,
       };
     }
     // ไม่มีรายการที่เลือก (เช่น เพิ่งพิมพ์เสร็จ) → ล้างตัวอย่าง
@@ -541,7 +561,35 @@ function SterilizeStation() {
                         style={{ marginLeft: 8 }}
                       />
                       <Text type={focusRow.showExp === false ? 'secondary' : undefined}>หมดอายุ</Text>
+                      <Switch
+                        size="small"
+                        checked={focusRow.showDept !== false}
+                        disabled={!focusRow.departmentId}
+                        onChange={(on) => updateRow(focusRow.key, { showDept: on })}
+                        style={{ marginLeft: 8 }}
+                      />
+                      <Text type={focusRow.showDept === false || !focusRow.departmentId ? 'secondary' : undefined}>ใช้ที่</Text>
                     </Space>
+                    {/* หน่วยงานที่นำไปใช้ (ไม่บังคับ) — เฉพาะดวงที่เลือก */}
+                    <Select
+                      size="small"
+                      showSearch
+                      allowClear
+                      placeholder="ใช้ที่ (หน่วยงาน) — ไม่บังคับ"
+                      optionFilterProp="search"
+                      value={focusRow.departmentId ?? null}
+                      onChange={(v) => {
+                        lastDeptId.current = v ?? undefined;
+                        updateRow(focusRow.key, { departmentId: v ?? undefined });
+                      }}
+                      style={{ width: 230 }}
+                      options={activeDepts.map((d) => ({
+                        value: d.id,
+                        label: d.code ? `${d.name} (${d.code})` : d.name,
+                        search: `${d.name} ${d.code ?? ''}`,
+                      }))}
+                      notFoundContent={activeDepts.length ? 'ไม่พบหน่วยงาน' : 'ยังไม่มีรายชื่อ — ให้แอดมินเพิ่มที่เมนูหน่วยงาน'}
+                    />
                   </Flex>
                   <Flex align="center" gap={8} style={{ whiteSpace: 'nowrap' }}>
                     <Text type="secondary">วันผลิต</Text>
@@ -735,6 +783,12 @@ function QueueItem({
                 {(row.showMfg === false || row.showExp === false) && (
                   <Tag style={{ marginInlineEnd: 0 }}>
                     ไม่พิมพ์{[row.showMfg === false && 'วันผลิต', row.showExp === false && 'หมดอายุ'].filter(Boolean).join(' / ')}
+                  </Tag>
+                )}
+                {row.deptName && (
+                  <Tag color={row.showDept === false ? undefined : 'geekblue'} style={{ marginInlineEnd: 0 }}>
+                    ใช้ที่ {row.deptName}
+                    {row.showDept === false && ' (ไม่พิมพ์)'}
                   </Tag>
                 )}
                 {row.codeType && info?.item && row.codeType !== (info.item.useBarcode ? 'barcode' : 'none') && (

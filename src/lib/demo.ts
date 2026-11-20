@@ -1,5 +1,5 @@
 import { dayjs, ISO_DATE } from './date';
-import type { AppData, DisposeReason, MasterItem, PrintLog, Staff, Unit } from './types';
+import type { AppData, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
  * สร้างข้อมูลจำลองสำหรับสาธิตระบบ — ย้อนหลังประมาณ 5 เดือนนับจากวันนี้
@@ -51,6 +51,14 @@ const DEMO_STAFF: Staff[] = [
   { id: 3, name: 'ประเสริฐ มั่นคง', code: 'C0207', active: true },
   { id: 4, name: 'กนกพร แสงทอง', code: 'N1102', active: true },
   { id: 5, name: 'ธนพล วงศ์ใหญ่', code: 'C0188', active: false },
+];
+
+const DEMO_DEPARTMENTS: Department[] = [
+  { id: 1, name: 'ห้องผ่าตัด', code: 'OR', active: true },
+  { id: 2, name: 'ห้องฉุกเฉิน', code: 'ER', active: true },
+  { id: 3, name: 'ICU', code: 'ICU', active: true },
+  { id: 4, name: 'หอผู้ป่วยอายุรกรรม', code: 'MED', active: true },
+  { id: 5, name: 'ห้องคลอด', code: 'LR', active: true },
 ];
 
 export function buildDemoData(seed = 20261014): AppData {
@@ -117,6 +125,12 @@ export function buildDemoData(seed = 20261014): AppData {
               const st = DEMO_STAFF[int(0, DEMO_STAFF.length - 1)];
               return { staffId: st.id, staffName: st.name };
             })(),
+            ...(() => {
+              // ~85% ระบุหน่วยงานที่นำไปใช้
+              if (rnd() > 0.85) return {};
+              const d = DEMO_DEPARTMENTS[int(0, DEMO_DEPARTMENTS.length - 1)];
+              return { departmentId: d.id, departmentName: d.name };
+            })(),
           };
           const t = cursor.hour(int(8, 13)).minute(int(0, 59));
           logs.push({ ...base, key: logKey, isReprint: false, time: t.format('YYYY-MM-DD HH:mm') });
@@ -179,5 +193,5 @@ export function buildDemoData(seed = 20261014): AppData {
     sourceId: srcKey != null ? logId.get(srcKey) : undefined,
   }));
 
-  return { items: DEMO_ITEMS, units: finalUnits, logs: finalLogs, staff: DEMO_STAFF };
+  return { items: DEMO_ITEMS, units: finalUnits, logs: finalLogs, staff: DEMO_STAFF, departments: DEMO_DEPARTMENTS };
 }

@@ -53,6 +53,7 @@ export default function UnitHistory({ unit }: { unit: Unit }) {
           <Text type="secondary" style={{ fontSize: 12 }}>
             พิมพ์เมื่อ {thaiDateTime(l.time)}
             {l.staffName && <> · โดย {l.staffName}</>}
+            {l.departmentName && <> · ใช้ที่ {l.departmentName}</>}
           </Text>
           <br />
           <Text style={{ fontSize: 12 }}>

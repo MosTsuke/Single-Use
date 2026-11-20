@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ApartmentOutlined,
   BarChartOutlined,
   BarcodeOutlined,
   CalendarOutlined,
@@ -40,6 +41,7 @@ const NAV = [
 const ADMIN_NAV = [
   { key: '/items', icon: <DatabaseOutlined />, label: 'รายการอุปกรณ์', desc: 'ตั้งค่าอายุหลัง sterilize รอบสูงสุด และคำนำหน้า SN' },
   { key: '/staff', icon: <TeamOutlined />, label: 'รายชื่อเจ้าหน้าที่', desc: 'รายชื่อผู้พิมพ์สติ๊กเกอร์ ใช้เลือกก่อนพิมพ์และแสดงบนสติ๊กเกอร์' },
+  { key: '/departments', icon: <ApartmentOutlined />, label: 'หน่วยงาน', desc: 'หน่วยงานที่นำอุปกรณ์ไปใช้ — เลือกได้ตอนพิมพ์ (ไม่บังคับ) และพิมพ์เป็น "ใช้ที่ ..."' },
   { key: '/settings', icon: <SettingOutlined />, label: 'ตั้งค่า', desc: 'โลโก้และชื่อโรงพยาบาล / บริษัท ที่แสดงในแถบเมนู' },
   { key: '/admins', icon: <SafetyCertificateOutlined />, label: 'บัญชีแอดมิน', desc: 'ผู้ที่เข้าหน้าตั้งค่าได้ (รายการอุปกรณ์ / รายชื่อเจ้าหน้าที่)' },
 ];

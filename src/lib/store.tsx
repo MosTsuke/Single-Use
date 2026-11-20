@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { nowStamp } from './date';
 import { storage } from './storage';
-import type { AppData, CodeType, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
+import type { AppData, CodeType, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
 import { cyclesUsed, generateSns, normSn, unitStatus } from './units';
 
 export interface UnitInfo {
@@ -27,6 +27,7 @@ interface StoreValue {
   /** ประวัติการพิมพ์ทั้งหมด รวมดวงที่ถูกยกเลิก — ใช้แสดงประวัติ / สำรองข้อมูล */
   allLogs: PrintLog[];
   staff: Staff[];
+  departments: Department[];
   saveError: string | null;
 
   getUnitInfo: (unit: Unit) => UnitInfo;
@@ -42,6 +43,11 @@ interface StoreValue {
   /** ลบได้เฉพาะคนที่ยังไม่เคยพิมพ์ — ถ้าเคยพิมพ์แล้วให้ปิดใช้งานแทน */
   deleteStaff: (id: number) => Result<void>;
 
+  addDepartment: (data: Omit<Department, 'id'>) => Result<Department>;
+  updateDepartment: (id: number, data: Omit<Department, 'id'>) => Result<Department>;
+  /** ลบได้เฉพาะหน่วยงานที่ยังไม่เคยถูกใช้ในการพิมพ์ — ถ้าเคยใช้แล้วให้ปิดใช้งานแทน */
+  deleteDepartment: (id: number) => Result<void>;
+
   registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => Result<Unit[]>;
   disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => Result<Unit>;
   /**
@@ -49,7 +55,18 @@ interface StoreValue {
    * opts.round = พิมพ์ข้ามไปรอบที่ระบุ (ต้อง ≥ รอบถัดไป และ ≤ รอบสูงสุด) ต้องมี opts.note
    * staffId = เจ้าหน้าที่ผู้พิมพ์ (บังคับ)
    */
-  sterilize: (unitId: number, mfg: string, exp: string, opts: { staffId: number; round?: number; note?: string; showMfg?: boolean; showExp?: boolean; codeType?: CodeType }) => Result<PrintLog>;
+  sterilize: (unitId: number, mfg: string, exp: string, opts: {
+      staffId: number;
+      round?: number;
+      note?: string;
+      showMfg?: boolean;
+      showExp?: boolean;
+      codeType?: CodeType;
+      /** หน่วยงานที่นำไปใช้ (ไม่บังคับ) */
+      departmentId?: number;
+      showDept?: boolean;
+    },
+  ) => Result<PrintLog>;
   /** พิมพ์ซ้ำดวงเดิม — override.codeType ใช้กับดวงนี้ดวงเดียว */
   createReprint: (logId: number, override?: { codeType?: CodeType }) => PrintLog | null;
   replaceAll: (data: AppData) => void;
@@ -86,7 +103,7 @@ function buildInfo(d: AppData, unit: Unit): UnitInfo {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>({ items: [], units: [], logs: [], staff: [] });
+  const [data, setData] = useState<AppData>({ items: [], units: [], logs: [], staff: [], departments: [] });
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // ค่าล่าสุดเสมอ ให้ action อ่าน/คืนค่าได้ทันทีโดยไม่รอ re-render
@@ -193,6 +210,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  const deptNameTaken = (list: Department[], name: string, exceptId?: number) =>
+    list.some((d) => d.id !== exceptId && d.name.replace(/\s+/g, ' ').toLowerCase() === name.replace(/\s+/g, ' ').toLowerCase());
+
+  const addDepartment = useCallback<StoreValue['addDepartment']>(
+    (d) => {
+      const cur = ref.current;
+      const name = d.name.trim();
+      if (!name) return { ok: false, error: 'กรุณากรอกชื่อหน่วยงาน' };
+      if (deptNameTaken(cur.departments, name)) return { ok: false, error: `มีหน่วยงาน "${name}" อยู่แล้ว` };
+      const x: Department = { id: nextId(cur.departments), name, code: d.code?.trim() || undefined, active: d.active };
+      commit({ ...cur, departments: [...cur.departments, x] });
+      return { ok: true, value: x };
+    },
+    [commit],
+  );
+
+  const updateDepartment = useCallback<StoreValue['updateDepartment']>(
+    (id, d) => {
+      const cur = ref.current;
+      const name = d.name.trim();
+      if (!name) return { ok: false, error: 'กรุณากรอกชื่อหน่วยงาน' };
+      if (deptNameTaken(cur.departments, name, id)) return { ok: false, error: `มีหน่วยงาน "${name}" อยู่แล้ว` };
+      const x: Department = { id, name, code: d.code?.trim() || undefined, active: d.active };
+      commit({ ...cur, departments: cur.departments.map((y) => (y.id === id ? x : y)) });
+      return { ok: true, value: x };
+    },
+    [commit],
+  );
+
+  const deleteDepartment = useCallback<StoreValue['deleteDepartment']>(
+    (id) => {
+      const cur = ref.current;
+      const used = cur.logs.filter((l) => l.departmentId === id).length;
+      if (used) return { ok: false, error: `หน่วยงานนี้มีประวัติการพิมพ์ ${used} ดวง — ลบไม่ได้ ให้ปิดใช้งานแทน` };
+      commit({ ...cur, departments: cur.departments.filter((d) => d.id !== id) });
+      return { ok: true, value: undefined };
+    },
+    [commit],
+  );
+
   const registerUnits = useCallback<StoreValue['registerUnits']>(
     ({ itemId, sns, manufacturerSn, replacesSn }) => {
       const cur = ref.current;
@@ -280,6 +337,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         note: note || undefined,
         showMfg: opts.showMfg === false ? false : undefined,
         showExp: opts.showExp === false ? false : undefined,
+        ...(() => {
+          const dept = opts.departmentId != null ? cur.departments.find((d) => d.id === opts.departmentId) : undefined;
+          return dept
+            ? { departmentId: dept.id, departmentName: dept.name, showDept: opts.showDept === false ? false : undefined }
+            : {};
+        })(),
         staffId: staff.id,
         staffName: staff.name,
         time: nowStamp(),
@@ -370,6 +433,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       logs: activeLogs,
       allLogs: data.logs,
       staff: data.staff,
+      departments: data.departments,
       saveError,
       getUnitInfo,
       findUnitBySn,
@@ -380,6 +444,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addStaff,
       updateStaff,
       deleteStaff,
+      addDepartment,
+      updateDepartment,
+      deleteDepartment,
       registerUnits,
       disposeUnit,
       sterilize,
@@ -389,7 +456,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       voidPrint,
       voidableLog,
     }),
-    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs, voidPrint, voidableLog, activeLogs],
+    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, addDepartment, updateDepartment, deleteDepartment, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs, voidPrint, voidableLog, activeLogs],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -43,7 +43,7 @@ type StatusFilter = 'all' | 'normal' | 'reprint' | 'void';
 const { Text } = Typography;
 
 function downloadCSV(rows: PrintLog[], filename: string) {
-  const head = ['วัน-เวลาที่พิมพ์', 'รายการอุปกรณ์', 'รอบ', 'รอบสูงสุด', 'วันผลิต', 'วันหมดอายุ', 'SN', 'สถานะ', 'เจ้าหน้าที่', 'หมายเหตุ'];
+  const head = ['วัน-เวลาที่พิมพ์', 'รายการอุปกรณ์', 'รอบ', 'รอบสูงสุด', 'วันผลิต', 'วันหมดอายุ', 'SN', 'สถานะ', 'เจ้าหน้าที่', 'ใช้ที่ (หน่วยงาน)', 'หมายเหตุ'];
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = rows.map((l) =>
     [
@@ -56,6 +56,7 @@ function downloadCSV(rows: PrintLog[], filename: string) {
       l.barcode ? `\t${l.barcode}` : '-',
       l.voidedAt ? 'ยกเลิก' : l.isReprint ? 'พิมพ์ซ้ำ (ชำรุด)' : 'พิมพ์ปกติ',
       l.staffName ?? '',
+      l.departmentName ?? '',
       [
         l.skippedFrom != null ? `ข้ามจากรอบ ${l.skippedFrom}${l.note ? ' · ' + l.note : ''}` : (l.note ?? ''),
         l.voidedAt ? `ยกเลิก ${thaiDateTime(l.voidedAt)}${l.voidBy ? ' โดย ' + l.voidBy : ''} · ${l.voidReason ?? ''}` : '',
@@ -100,7 +101,7 @@ export default function ReportsPage() {
         if (status === 'normal' && (l.isReprint || l.voidedAt)) return false;
         if (status === 'reprint' && (!l.isReprint || l.voidedAt)) return false;
         if (status === 'void' && !l.voidedAt) return false;
-        if (kw && ![l.name, l.barcode, l.staffName ?? ''].some((v) => v.toLowerCase().includes(kw))) return false;
+        if (kw && ![l.name, l.barcode, l.staffName ?? '', l.departmentName ?? ''].some((v) => v.toLowerCase().includes(kw))) return false;
         return true;
       })
       .slice()
@@ -180,6 +181,13 @@ export default function ReportsPage() {
       title: 'เจ้าหน้าที่',
       dataIndex: 'staffName',
       width: 160,
+      ellipsis: true,
+      render: (v?: string) => (v ? v : <Text type="secondary">—</Text>),
+    },
+    {
+      title: 'ใช้ที่',
+      dataIndex: 'departmentName',
+      width: 150,
       ellipsis: true,
       render: (v?: string) => (v ? v : <Text type="secondary">—</Text>),
     },
@@ -285,7 +293,7 @@ export default function ReportsPage() {
                 <Input
                   allowClear
                   prefix={<SearchOutlined />}
-                  placeholder="ค้นหาชื่อ / SN / เจ้าหน้าที่"
+                  placeholder="ค้นหาชื่อ / SN / เจ้าหน้าที่ / หน่วยงาน"
                   style={{ width: 200 }}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
@@ -297,7 +305,7 @@ export default function ReportsPage() {
               rowKey="id"
               columns={columns}
               dataSource={filtered}
-              scroll={{ x: 1160 }}
+              scroll={{ x: 1310 }}
               pagination={{ pageSize: 15, showSizeChanger: true, showTotal: (t) => `ทั้งหมด ${t} รายการ` }}
               locale={{ emptyText: <Empty description="ไม่มีข้อมูลในช่วงเวลานี้" /> }}
             />
