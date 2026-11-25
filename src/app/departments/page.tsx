@@ -57,7 +57,7 @@ export default function DepartmentsPage() {
   const onSave = async () => {
     const v = await form.validateFields().catch(() => null);
     if (!v) return;
-    const res = editing ? updateDepartment(editing.id, v) : addDepartment(v);
+    const res = editing ? await updateDepartment(editing.id, v) : await addDepartment(v);
     if (!res.ok) {
       message.error(res.error);
       return;
@@ -66,8 +66,8 @@ export default function DepartmentsPage() {
     setOpen(false);
   };
 
-  const setActive = (s: Department, active: boolean) => {
-    const res = updateDepartment(s.id, { ...s, active });
+  const setActive = async (s: Department, active: boolean) => {
+    const res = await updateDepartment(s.id, { ...s, active });
     if (res.ok) message.success(`${s.name}: ${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน (ไม่แสดงในหน้าพิมพ์)'}`);
     else message.error(res.error);
   };
@@ -134,8 +134,8 @@ export default function DepartmentsPage() {
             okText="ลบ"
             cancelText="ยกเลิก"
             okButtonProps={{ danger: true, disabled: r.prints > 0 }}
-            onConfirm={() => {
-              const res = deleteDepartment(r.id);
+            onConfirm={async () => {
+              const res = await deleteDepartment(r.id);
               if (res.ok) message.success(`ลบ ${r.name} แล้ว`);
               else message.error(res.error);
             }}

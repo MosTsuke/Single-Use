@@ -55,7 +55,7 @@ export default function AdminsPage() {
     if (!v) return;
     setBusy(true);
     const res = editing
-      ? updateAdmin(editing.id, { displayName: v.displayName, active: v.active })
+      ? await updateAdmin(editing.id, { displayName: v.displayName, active: v.active })
       : await createAdmin({ username: v.username, displayName: v.displayName, password: v.password! });
     setBusy(false);
     if (!res.ok) return message.error(res.error);
@@ -104,8 +104,8 @@ export default function AdminsPage() {
             size="small"
             checked={v}
             disabled={r.id === current?.id}
-            onChange={(on) => {
-              const res = updateAdmin(r.id, { displayName: r.displayName, active: on });
+            onChange={async (on) => {
+              const res = await updateAdmin(r.id, { displayName: r.displayName, active: on });
               if (res.ok) message.success(`${r.username}: ${on ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}`);
               else message.error(res.error);
             }}
@@ -140,8 +140,8 @@ export default function AdminsPage() {
             cancelText="ยกเลิก"
             okButtonProps={{ danger: true }}
             disabled={r.id === current?.id}
-            onConfirm={() => {
-              const res = deleteAdmin(r.id);
+            onConfirm={async () => {
+              const res = await deleteAdmin(r.id);
               if (res.ok) message.success(`ลบ ${r.username} แล้ว`);
               else message.error(res.error);
             }}
@@ -175,7 +175,7 @@ export default function AdminsPage() {
           showIcon
           style={{ marginBottom: 16 }}
           title="แอดมินเข้าหน้ารายการอุปกรณ์ / รายชื่อเจ้าหน้าที่ / บัญชีแอดมินได้ · เจ้าหน้าที่ทั่วไปพิมพ์สติ๊กเกอร์ได้โดยไม่ต้องเข้าสู่ระบบ"
-          description="บัญชีเก็บอยู่ในเบราว์เซอร์ของเครื่องนี้ (ไม่รวมในไฟล์สำรองข้อมูล) — ถ้าใช้หลายเครื่องต้องสร้างบัญชีแยกแต่ละเครื่อง ระบบนี้กันคนทั่วไปเข้าหน้าตั้งค่า แต่ยังไม่ใช่ความปลอดภัยระดับเซิร์ฟเวอร์"
+          description="บัญชีเก็บในฐานข้อมูลที่เครื่องแม่ ใช้ได้ทุกเครื่อง รหัสผ่านตรวจที่เครื่องแม่ · ออกจากระบบเองเมื่อไม่ใช้งาน 15 นาที หรือปิดหน้าต่าง"
         />
         <Table rowKey="id" columns={columns} dataSource={admins} scroll={{ x: 800 }} pagination={false} />
       </Card>

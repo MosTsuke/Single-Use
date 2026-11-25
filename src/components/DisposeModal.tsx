@@ -43,7 +43,7 @@ export default function DisposeModal({ unit, onClose, onDisposed, defaultReplace
     if (!unit) return;
     const v = await form.validateFields().catch(() => null);
     if (!v) return; // ฟอร์มยังไม่ครบ — antd แสดงข้อความเตือนในช่องแล้ว
-    const res = disposeUnit(unit.id, v.reason!, v.note);
+    const res = await disposeUnit(unit.id, v.reason!, v.note);
     if (!res.ok) {
       message.error(res.error);
       return;

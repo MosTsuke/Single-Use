@@ -3,6 +3,17 @@ import type { ReactNode } from 'react';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import AppProviders from '@/components/AppProviders';
 import AppShell from '@/components/AppShell';
+// ฟอนต์ฝังมากับโปรแกรม (หน้างานไม่มีอินเทอร์เน็ต) — Sarabun ใช้บนสติ๊กเกอร์ ต้องโหลดได้เสมอ
+import '@fontsource/prompt/300.css';
+import '@fontsource/prompt/400.css';
+import '@fontsource/prompt/500.css';
+import '@fontsource/prompt/600.css';
+import '@fontsource/prompt/700.css';
+import '@fontsource/sarabun/400.css';
+import '@fontsource/sarabun/500.css';
+import '@fontsource/sarabun/600.css';
+import '@fontsource/sarabun/700.css';
+import '@fontsource/sarabun/800.css';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,15 +24,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="th">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;500;600;700;800&display=swap"
-        />
-      </head>
       <body>
         <AntdRegistry>
           <AppProviders>

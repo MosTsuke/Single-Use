@@ -17,10 +17,10 @@ import {
   TagsOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Flex, Grid, Layout, Menu, Spin, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Button, Flex, Grid, Layout, Menu, Result, Spin, Tag, Tooltip, Typography } from 'antd';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AdminGateCard, AdminLoginModal } from '@/components/AdminLogin';
+import { AdminGateCard, AdminLoginModal, FirstAdminSetupCard } from '@/components/AdminLogin';
 import { IDLE_MINUTES, useAuth } from '@/lib/auth';
 import { useBrand } from '@/lib/brand';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -51,7 +51,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.lg;
   const [collapsed, setCollapsed] = useState(false);
-  const { ready, saveError } = useStore();
+  const { ready, saveError, reload } = useStore();
   const auth = useAuth();
   const { brand: BRAND } = useBrand();
   const router = useRouter();
@@ -217,17 +217,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </Header>
 
         <Content style={{ padding: isMobile ? 12 : 24 }}>
-          {saveError && (
+          {saveError && ready && (
             <Alert
               type="error"
               showIcon
               style={{ marginBottom: 16 }}
-              title="บันทึกข้อมูลไม่สำเร็จ"
+              title="เชื่อมต่อฐานข้อมูลที่เครื่องแม่ไม่ได้ — ข้อมูลบนหน้าจออาจไม่ล่าสุด และยังบันทึกไม่ได้"
               description={saveError}
             />
           )}
-          {ready && auth.ready ? (
-            adminPage && !isAdmin ? (
+          {!ready && saveError ? (
+            <Result
+              status="warning"
+              title="ยังเปิดข้อมูลไม่ได้"
+              subTitle={saveError}
+              extra={
+                <Button type="primary" onClick={() => void reload()}>
+                  ลองใหม่
+                </Button>
+              }
+            />
+          ) : ready && auth.ready ? (
+            auth.needsSetup ? (
+              <FirstAdminSetupCard />
+            ) : adminPage && !isAdmin ? (
               <AdminGateCard />
             ) : (
               children

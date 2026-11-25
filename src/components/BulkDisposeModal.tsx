@@ -47,7 +47,7 @@ export default function BulkDisposeModal({
     let ok = 0;
     const failed: string[] = [];
     for (const r of rows) {
-      const res = disposeUnit(r.unit.id, v.reason!, v.note);
+      const res = await disposeUnit(r.unit.id, v.reason!, v.note);
       if (res.ok) ok++;
       else failed.push(`${r.unit.sn}: ${res.error}`);
     }

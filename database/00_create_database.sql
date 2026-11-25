@@ -46,6 +46,8 @@ GO
 /* ---------- 4) ให้สิทธิ์เฉพาะฐานข้อมูลนี้ ----------
    - อ่าน/เขียนข้อมูล และรัน stored procedure ได้
    - แก้โครงสร้างตาราง (db_ddladmin) ได้เฉพาะในฐานข้อมูลนี้ เพื่อให้รันสคริปต์อัปเดตเวอร์ชันได้
+   - สำรองฐานข้อมูลนี้ (db_backupoperator) — โปรแกรมสำรองให้เองวันละครั้ง
+     ลงโฟลเดอร์ backup มาตรฐานของ SQL Server (เก็บ 7 ไฟล์ วนตามวันในสัปดาห์)
    - ไม่มีสิทธิ์ใด ๆ กับฐานข้อมูลอื่น */
 USE [SingleUseSticker];
 GO
@@ -55,9 +57,10 @@ GO
 ALTER ROLE db_datareader ADD MEMBER [singleuse_app];
 ALTER ROLE db_datawriter ADD MEMBER [singleuse_app];
 ALTER ROLE db_ddladmin  ADD MEMBER [singleuse_app];
+ALTER ROLE db_backupoperator ADD MEMBER [singleuse_app];
 GRANT EXECUTE TO [singleuse_app];
 GO
-PRINT N'เสร็จขั้นที่ 0 — ต่อด้วยไฟล์ 01_schema_v1.sql';
+PRINT N'เสร็จขั้นที่ 0 — ตารางจะถูกสร้างให้เองเมื่อเปิดโปรแกรมครั้งแรก (หรือรัน 01_, 02_, 03_ ใน SSMS ตามลำดับ)';
 GO
 SET NOEXEC OFF;
 GO

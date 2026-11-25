@@ -1,10 +1,18 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { nowStamp } from './date';
-import { storage } from './storage';
+import { callAction, getAppData, getJSON } from './api';
+import type { Patch } from './api-types';
 import type { AppData, CodeType, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
 import { cyclesUsed, generateSns, normSn, unitStatus } from './units';
+
+/**
+ * ข้อมูลกลางของโปรแกรม — เก็บใน SQL Server ที่เครื่องแม่ (ผ่าน /api/...)
+ *
+ * - เปิดหน้าเว็บ: โหลดข้อมูลทั้งหมดครั้งเดียว แล้วคำนวณสถานะ/รายงานในเครื่อง (เหมือนเดิม)
+ * - บันทึก: ส่งไปให้เซิร์ฟเวอร์ตรวจและบันทึกใน transaction แล้วนำส่วนที่เปลี่ยนมาใส่ในข้อมูลที่โหลดไว้
+ * - หลายเครื่องใช้พร้อมกัน: ทุก 4 วินาทีถามเลขรุ่นของข้อมูล ถ้าเครื่องอื่นบันทึกอะไรไป จะโหลดใหม่ให้เอง
+ */
 
 export interface UnitInfo {
   unit: Unit;
@@ -28,34 +36,41 @@ interface StoreValue {
   allLogs: PrintLog[];
   staff: Staff[];
   departments: Department[];
+  /** เชื่อมต่อเครื่องแม่/ฐานข้อมูลไม่ได้ (null = ปกติ) */
   saveError: string | null;
+  /** โหลดข้อมูลทั้งหมดใหม่จากเครื่องแม่ */
+  reload: () => Promise<void>;
 
   getUnitInfo: (unit: Unit) => UnitInfo;
   findUnitBySn: (sn: string) => Unit | undefined;
   suggestSns: (itemId: number, count: number) => string[];
 
-  addItem: (data: Omit<MasterItem, 'id'>) => void;
-  updateItem: (id: number, data: Omit<MasterItem, 'id'>) => void;
-  deleteItem: (id: number) => Result<void>;
+  addItem: (data: Omit<MasterItem, 'id'>) => Promise<Result<MasterItem>>;
+  updateItem: (id: number, data: Omit<MasterItem, 'id'>) => Promise<Result<MasterItem>>;
+  deleteItem: (id: number) => Promise<Result<void>>;
 
-  addStaff: (data: Omit<Staff, 'id'>) => Result<Staff>;
-  updateStaff: (id: number, data: Omit<Staff, 'id'>) => Result<Staff>;
+  addStaff: (data: Omit<Staff, 'id'>) => Promise<Result<Staff>>;
+  updateStaff: (id: number, data: Omit<Staff, 'id'>) => Promise<Result<Staff>>;
   /** ลบได้เฉพาะคนที่ยังไม่เคยพิมพ์ — ถ้าเคยพิมพ์แล้วให้ปิดใช้งานแทน */
-  deleteStaff: (id: number) => Result<void>;
+  deleteStaff: (id: number) => Promise<Result<void>>;
 
-  addDepartment: (data: Omit<Department, 'id'>) => Result<Department>;
-  updateDepartment: (id: number, data: Omit<Department, 'id'>) => Result<Department>;
+  addDepartment: (data: Omit<Department, 'id'>) => Promise<Result<Department>>;
+  updateDepartment: (id: number, data: Omit<Department, 'id'>) => Promise<Result<Department>>;
   /** ลบได้เฉพาะหน่วยงานที่ยังไม่เคยถูกใช้ในการพิมพ์ — ถ้าเคยใช้แล้วให้ปิดใช้งานแทน */
-  deleteDepartment: (id: number) => Result<void>;
+  deleteDepartment: (id: number) => Promise<Result<void>>;
 
-  registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => Result<Unit[]>;
-  disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => Result<Unit>;
+  registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => Promise<Result<Unit[]>>;
+  disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => Promise<Result<Unit>>;
   /**
    * sterilize เสร็จ → บันทึกรอบใหม่และคืนข้อมูลสำหรับพิมพ์
    * opts.round = พิมพ์ข้ามไปรอบที่ระบุ (ต้อง ≥ รอบถัดไป และ ≤ รอบสูงสุด) ต้องมี opts.note
    * staffId = เจ้าหน้าที่ผู้พิมพ์ (บังคับ)
    */
-  sterilize: (unitId: number, mfg: string, exp: string, opts: {
+  sterilize: (
+    unitId: number,
+    mfg: string,
+    exp: string,
+    opts: {
       staffId: number;
       round?: number;
       note?: string;
@@ -66,21 +81,23 @@ interface StoreValue {
       departmentId?: number;
       showDept?: boolean;
     },
-  ) => Result<PrintLog>;
+  ) => Promise<Result<PrintLog>>;
   /** พิมพ์ซ้ำดวงเดิม — override.codeType ใช้กับดวงนี้ดวงเดียว */
-  createReprint: (logId: number, override?: { codeType?: CodeType }) => PrintLog | null;
-  replaceAll: (data: AppData) => void;
+  createReprint: (logId: number, override?: { codeType?: CodeType }) => Promise<Result<PrintLog>>;
+  /** นำเข้าข้อมูลจากไฟล์สำรอง (ได้เฉพาะตอนฐานข้อมูลยังว่าง) */
+  importData: (data: AppData) => Promise<Result<{ skipped: number }>>;
   /** ย้อนการพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์) — ลบได้เฉพาะดวงล่าสุดของชิ้นนั้น */
-  removeLogs: (ids: number[]) => Result<void>;
+  removeLogs: (ids: number[]) => Promise<Result<void>>;
   /** ยกเลิกใบที่พิมพ์ผิด (เฉพาะดวงล่าสุดของชิ้นนั้น) — คืนรอบเดิม และบันทึกการยกเลิกในประวัติ */
-  voidPrint: (logId: number, input: { reason: string; staffId: number }) => Result<PrintLog>;
+  voidPrint: (logId: number, input: { reason: string; staffId: number }) => Promise<Result<PrintLog>>;
   /** ดวงล่าสุดของชิ้นที่ยกเลิกได้ (ไม่มี = ยกเลิกไม่ได้) */
   voidableLog: (unit: Unit) => PrintLog | undefined;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-const nextId = (list: { id: number }[]) => (list.length ? Math.max(...list.map((x) => x.id)) + 1 : 1);
+const EMPTY: AppData = { items: [], units: [], logs: [], staff: [], departments: [] };
+const POLL_MS = 4000;
 
 function buildInfo(d: AppData, unit: Unit): UnitInfo {
   const used = cyclesUsed(d.logs, unit.id);
@@ -102,29 +119,107 @@ function buildInfo(d: AppData, unit: Unit): UnitInfo {
   };
 }
 
+/** ใส่แถวที่เปลี่ยน/เพิ่ม และเอาแถวที่ถูกลบออก (เรียงตาม id เสมอ) */
+function merge<T extends { id: number }>(list: T[], rows?: T[], removed?: number[]): T[] {
+  if (!rows?.length && !removed?.length) return list;
+  const rm = new Set(removed ?? []);
+  const byId = new Map((rows ?? []).map((r) => [r.id, r]));
+  const out = list.filter((x) => !rm.has(x.id)).map((x) => byId.get(x.id) ?? x);
+  const have = new Set(out.map((x) => x.id));
+  const added = (rows ?? []).filter((r) => !have.has(r.id));
+  if (!added.length) return out;
+  return [...out, ...added].sort((a, b) => a.id - b.id);
+}
+
+const applyPatch = (d: AppData, p: Patch): AppData => ({
+  items: merge(d.items, p.items, p.removed?.items),
+  units: merge(d.units, p.units),
+  logs: merge(d.logs, p.logs, p.removed?.logs),
+  staff: merge(d.staff, p.staff, p.removed?.staff),
+  departments: merge(d.departments, p.departments, p.removed?.departments),
+});
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>({ items: [], units: [], logs: [], staff: [], departments: [] });
+  const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // ค่าล่าสุดเสมอ ให้ action อ่าน/คืนค่าได้ทันทีโดยไม่รอ re-render
+  // ค่าล่าสุดเสมอ ให้ action อ่านได้ทันทีโดยไม่รอ re-render
   const ref = useRef(data);
+  const versionRef = useRef<number | null>(null);
+  const loading = useRef<Promise<void> | null>(null);
+  const again = useRef(false);
+
+  const reload = useCallback(async (): Promise<void> => {
+    // โหลดอยู่แล้ว → โหลดซ้ำอีกรอบหลังรอบนี้เสร็จ (กันพลาดการเปลี่ยนแปลงระหว่างโหลด)
+    if (loading.current) {
+      again.current = true;
+      return loading.current;
+    }
+    loading.current = (async () => {
+      do {
+        again.current = false;
+        try {
+          const r = await getAppData<{ data: AppData; version: number }>();
+          ref.current = r.data;
+          versionRef.current = r.version;
+          setData(r.data);
+          setReady(true);
+          setSaveError(null);
+        } catch (e) {
+          setSaveError(e instanceof Error ? e.message : String(e));
+        }
+      } while (again.current);
+    })().finally(() => {
+      loading.current = null;
+    });
+    return loading.current;
+  }, []);
 
   useEffect(() => {
-    storage.load().then((d) => {
-      ref.current = d;
-      setData(d);
-      setReady(true);
-    });
-  }, []);
+    void reload();
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const { version } = await getJSON<{ version: number }>('/api/version');
+        if (version !== versionRef.current) await reload();
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : String(e));
+      }
+    };
+    const timer = window.setInterval(tick, POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [reload]);
 
-  const commit = useCallback((next: AppData) => {
-    ref.current = next;
-    setData(next);
-    storage
-      .save(next)
-      .then(() => setSaveError(null))
-      .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  /** ส่งงานให้เซิร์ฟเวอร์ แล้วอัปเดตข้อมูลในเครื่องตามผล */
+  const run = useCallback(
+    async <T,>(name: string, args: unknown): Promise<Result<T>> => {
+      const before = versionRef.current;
+      const res = await callAction<T>(name, args);
+      if (!res.ok) {
+        if (res.version === -1) setSaveError(res.error);
+        // มีเครื่องอื่นบันทึกไปก่อน (มักเป็นสาเหตุที่ไม่ผ่าน) → โหลดข้อมูลล่าสุด
+        else if (res.version !== before) void reload();
+        return { ok: false, error: res.error };
+      }
+      setSaveError(null);
+      if (res.patch.reload) {
+        await reload();
+      } else {
+        const next = applyPatch(ref.current, res.patch);
+        ref.current = next;
+        setData(next);
+        // ระหว่างนี้เครื่องอื่นบันทึกอะไรไปด้วย → โหลดใหม่ทั้งหมด
+        if (before != null && res.version === before + 1) versionRef.current = res.version;
+        else void reload();
+      }
+      return { ok: true, value: res.value };
+    },
+    [reload],
+  );
 
   // ฟังก์ชันอ่านข้อมูลผูกกับ data เพื่อให้คอมโพเนนต์ re-render เมื่อข้อมูลเปลี่ยน
   const getUnitInfo = useCallback((u: Unit) => buildInfo(data, u), [data]);
@@ -143,238 +238,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data],
   );
 
-  const addItem = useCallback(
-    (d: Omit<MasterItem, 'id'>) => {
-      const cur = ref.current;
-      commit({ ...cur, items: [...cur.items, { ...d, id: nextId(cur.items) }] });
-    },
-    [commit],
-  );
-
-  const updateItem = useCallback(
-    (id: number, d: Omit<MasterItem, 'id'>) => {
-      const cur = ref.current;
-      commit({ ...cur, items: cur.items.map((i) => (i.id === id ? { ...d, id } : i)) });
-    },
-    [commit],
-  );
-
-  const deleteItem = useCallback(
-    (id: number): Result<void> => {
-      const cur = ref.current;
-      const live = cur.units.filter((u) => u.itemId === id && !u.disposedAt).length;
-      if (live) return { ok: false, error: `ยังมีอุปกรณ์ของรายการนี้ที่ยังไม่ถูกทำลาย ${live} ชิ้น` };
-      commit({ ...cur, items: cur.items.filter((i) => i.id !== id) });
-      return { ok: true, value: undefined };
-    },
-    [commit],
-  );
-
-  const staffNameTaken = (list: Staff[], name: string, exceptId?: number) =>
-    list.some((s) => s.id !== exceptId && s.name.replace(/\s+/g, ' ').toLowerCase() === name.replace(/\s+/g, ' ').toLowerCase());
-
-  const addStaff = useCallback<StoreValue['addStaff']>(
-    (d) => {
-      const cur = ref.current;
-      const name = d.name.trim();
-      if (!name) return { ok: false, error: 'กรุณากรอกชื่อ' };
-      if (staffNameTaken(cur.staff, name)) return { ok: false, error: `มีชื่อ "${name}" อยู่แล้ว` };
-      const s: Staff = { id: nextId(cur.staff), name, code: d.code?.trim() || undefined, active: d.active };
-      commit({ ...cur, staff: [...cur.staff, s] });
-      return { ok: true, value: s };
-    },
-    [commit],
-  );
-
-  const updateStaff = useCallback<StoreValue['updateStaff']>(
-    (id, d) => {
-      const cur = ref.current;
-      const name = d.name.trim();
-      if (!name) return { ok: false, error: 'กรุณากรอกชื่อ' };
-      if (staffNameTaken(cur.staff, name, id)) return { ok: false, error: `มีชื่อ "${name}" อยู่แล้ว` };
-      const s: Staff = { id, name, code: d.code?.trim() || undefined, active: d.active };
-      commit({ ...cur, staff: cur.staff.map((x) => (x.id === id ? s : x)) });
-      return { ok: true, value: s };
-    },
-    [commit],
-  );
-
-  const deleteStaff = useCallback<StoreValue['deleteStaff']>(
-    (id) => {
-      const cur = ref.current;
-      const used = cur.logs.filter((l) => l.staffId === id).length;
-      if (used) return { ok: false, error: `เจ้าหน้าที่คนนี้มีประวัติการพิมพ์ ${used} ดวง — ลบไม่ได้ ให้ปิดใช้งานแทน` };
-      commit({ ...cur, staff: cur.staff.filter((s) => s.id !== id) });
-      return { ok: true, value: undefined };
-    },
-    [commit],
-  );
-
-  const deptNameTaken = (list: Department[], name: string, exceptId?: number) =>
-    list.some((d) => d.id !== exceptId && d.name.replace(/\s+/g, ' ').toLowerCase() === name.replace(/\s+/g, ' ').toLowerCase());
-
-  const addDepartment = useCallback<StoreValue['addDepartment']>(
-    (d) => {
-      const cur = ref.current;
-      const name = d.name.trim();
-      if (!name) return { ok: false, error: 'กรุณากรอกชื่อหน่วยงาน' };
-      if (deptNameTaken(cur.departments, name)) return { ok: false, error: `มีหน่วยงาน "${name}" อยู่แล้ว` };
-      const x: Department = { id: nextId(cur.departments), name, code: d.code?.trim() || undefined, active: d.active };
-      commit({ ...cur, departments: [...cur.departments, x] });
-      return { ok: true, value: x };
-    },
-    [commit],
-  );
-
-  const updateDepartment = useCallback<StoreValue['updateDepartment']>(
-    (id, d) => {
-      const cur = ref.current;
-      const name = d.name.trim();
-      if (!name) return { ok: false, error: 'กรุณากรอกชื่อหน่วยงาน' };
-      if (deptNameTaken(cur.departments, name, id)) return { ok: false, error: `มีหน่วยงาน "${name}" อยู่แล้ว` };
-      const x: Department = { id, name, code: d.code?.trim() || undefined, active: d.active };
-      commit({ ...cur, departments: cur.departments.map((y) => (y.id === id ? x : y)) });
-      return { ok: true, value: x };
-    },
-    [commit],
-  );
-
-  const deleteDepartment = useCallback<StoreValue['deleteDepartment']>(
-    (id) => {
-      const cur = ref.current;
-      const used = cur.logs.filter((l) => l.departmentId === id).length;
-      if (used) return { ok: false, error: `หน่วยงานนี้มีประวัติการพิมพ์ ${used} ดวง — ลบไม่ได้ ให้ปิดใช้งานแทน` };
-      commit({ ...cur, departments: cur.departments.filter((d) => d.id !== id) });
-      return { ok: true, value: undefined };
-    },
-    [commit],
-  );
-
-  const registerUnits = useCallback<StoreValue['registerUnits']>(
-    ({ itemId, sns, manufacturerSn, replacesSn }) => {
-      const cur = ref.current;
-      const item = cur.items.find((i) => i.id === itemId);
-      if (!item) return { ok: false, error: 'ไม่พบรายการอุปกรณ์' };
-      const cleaned = sns.map((s) => s.trim()).filter(Boolean);
-      if (!cleaned.length) return { ok: false, error: 'กรุณาระบุ SN' };
-      const seen = new Set(cur.units.map((u) => normSn(u.sn)));
-      for (const s of cleaned) {
-        const k = normSn(s);
-        if (seen.has(k)) return { ok: false, error: `SN ${s} มีอยู่ในระบบแล้ว` };
-        seen.add(k);
-      }
-      const time = nowStamp();
-      const units = [...cur.units];
-      const created: Unit[] = cleaned.map((sn) => {
-        const u: Unit = {
-          id: nextId(units),
-          sn,
-          itemId,
-          maxRound: item.maxRound,
-          manufacturerSn,
-          registeredAt: time,
-          replacesSn,
-        };
-        units.push(u);
-        return u;
-      });
-      commit({ ...cur, units });
-      return { ok: true, value: created };
-    },
-    [commit],
-  );
-
-  const disposeUnit = useCallback<StoreValue['disposeUnit']>(
-    (unitId, reason, note) => {
-      const cur = ref.current;
-      const u = cur.units.find((x) => x.id === unitId);
-      if (!u) return { ok: false, error: 'ไม่พบอุปกรณ์' };
-      if (u.disposedAt) return { ok: false, error: 'อุปกรณ์ชิ้นนี้ถูกทำลายไปแล้ว' };
-      const updated: Unit = { ...u, disposedAt: nowStamp(), disposeReason: reason, disposeNote: note?.trim() || undefined };
-      commit({ ...cur, units: cur.units.map((x) => (x.id === unitId ? updated : x)) });
-      return { ok: true, value: updated };
-    },
-    [commit],
-  );
-
-  const sterilize = useCallback<StoreValue['sterilize']>(
-    (unitId, mfg, exp, opts) => {
-      const cur = ref.current;
-      const u = cur.units.find((x) => x.id === unitId);
-      if (!u) return { ok: false, error: 'ไม่พบอุปกรณ์' };
-      const info = buildInfo(cur, u);
-      if (info.nextRound == null) {
-        return {
-          ok: false,
-          error: info.status === 'disposed' ? 'อุปกรณ์ชิ้นนี้ถูกทำลายแล้ว' : `ใช้ครบ ${u.maxRound} รอบแล้ว ต้องทำลาย`,
-        };
-      }
-      const item = info.item;
-      const round = opts?.round ?? info.nextRound;
-      if (!Number.isInteger(round) || round < info.nextRound || round > u.maxRound) {
-        return { ok: false, error: `รอบต้องอยู่ระหว่าง ${info.nextRound} ถึง ${u.maxRound}` };
-      }
-      const staff = cur.staff.find((s) => s.id === opts.staffId);
-      if (!staff) return { ok: false, error: 'กรุณาเลือกเจ้าหน้าที่ผู้พิมพ์' };
-      const skipped = round > info.nextRound;
-      const note = opts?.note?.trim();
-      if (skipped && !note) return { ok: false, error: 'พิมพ์ข้ามรอบต้องกรอกหมายเหตุ' };
-      const log: PrintLog = {
-        id: nextId(cur.logs),
-        unitId: u.id,
-        itemId: u.itemId,
-        name: item?.name ?? '(รายการถูกลบ)',
-        // ชนิดรหัสของดวงนี้ (ไม่ระบุ = ตามค่าของรายการอุปกรณ์)
-        codeType: opts.codeType ?? ((item?.useBarcode ?? true) ? 'barcode' : 'none'),
-        useBarcode: (opts.codeType ?? ((item?.useBarcode ?? true) ? 'barcode' : 'none')) === 'barcode',
-        barcode: u.sn,
-        mfg,
-        exp,
-        round,
-        maxRound: u.maxRound,
-        isReprint: false,
-        skippedFrom: skipped ? info.nextRound : undefined,
-        note: note || undefined,
-        showMfg: opts.showMfg === false ? false : undefined,
-        showExp: opts.showExp === false ? false : undefined,
-        ...(() => {
-          const dept = opts.departmentId != null ? cur.departments.find((d) => d.id === opts.departmentId) : undefined;
-          return dept
-            ? { departmentId: dept.id, departmentName: dept.name, showDept: opts.showDept === false ? false : undefined }
-            : {};
-        })(),
-        staffId: staff.id,
-        staffName: staff.name,
-        time: nowStamp(),
-      };
-      commit({ ...cur, logs: [...cur.logs, log] });
-      return { ok: true, value: log };
-    },
-    [commit],
-  );
-
-  const createReprint = useCallback(
-    (logId: number, override?: { codeType?: CodeType }) => {
-      const cur = ref.current;
-      const src = cur.logs.find((l) => l.id === logId);
-      if (!src) return null;
-      const log: PrintLog = {
-        ...src,
-        id: nextId(cur.logs),
-        sourceId: src.sourceId ?? src.id,
-        codeType: override?.codeType ?? src.codeType,
-        useBarcode: override?.codeType ? override.codeType === 'barcode' : src.useBarcode,
-        isReprint: true, // ใช้ SN วันที่ และรอบเดิม ไม่นับรอบเพิ่ม
-        time: nowStamp(),
-      };
-      commit({ ...cur, logs: [...cur.logs, log] });
-      return log;
-    },
-    [commit],
-  );
-
-  const replaceAll = useCallback((d: AppData) => commit(d), [commit]);
-
   const findVoidable = (d: AppData, unit: Unit): PrintLog | undefined => {
     if (unit.disposedAt) return undefined;
     let last: PrintLog | undefined;
@@ -383,44 +246,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
   const voidableLog = useCallback((unit: Unit) => findVoidable(data, unit), [data]);
 
-  const voidPrint = useCallback<StoreValue['voidPrint']>(
-    (logId, { reason, staffId }) => {
-      const cur = ref.current;
-      const log = cur.logs.find((l) => l.id === logId);
-      if (!log) return { ok: false, error: 'ไม่พบใบที่พิมพ์' };
-      if (log.voidedAt) return { ok: false, error: 'ใบนี้ถูกยกเลิกไปแล้ว' };
-      if (log.isReprint) return { ok: false, error: 'ยกเลิกได้เฉพาะใบที่พิมพ์ปกติ (พิมพ์ซ้ำจะถูกยกเลิกตามใบหลัก)' };
-      const unit = cur.units.find((u) => u.id === log.unitId);
-      if (!unit) return { ok: false, error: 'ไม่พบอุปกรณ์' };
-      if (unit.disposedAt) return { ok: false, error: 'ชิ้นนี้ถูกทำลายแล้ว ยกเลิกการพิมพ์ไม่ได้' };
-      if (findVoidable(cur, unit)?.id !== log.id) return { ok: false, error: 'ยกเลิกได้เฉพาะใบล่าสุดของชิ้นนี้' };
-      const why = reason.trim();
-      if (!why) return { ok: false, error: 'กรุณาระบุเหตุผลที่ยกเลิก' };
-      const staff = cur.staff.find((s) => s.id === staffId);
-      if (!staff) return { ok: false, error: 'กรุณาเลือกเจ้าหน้าที่ผู้ยกเลิก' };
-      const mark = { voidedAt: nowStamp(), voidReason: why, voidByStaffId: staff.id, voidBy: staff.name };
-      const logs = cur.logs.map((l) => (l.id === log.id || (l.isReprint && l.sourceId === log.id) ? { ...l, ...mark } : l));
-      commit({ ...cur, logs });
-      return { ok: true, value: { ...log, ...mark } };
-    },
-    [commit],
-  );
-
-  const removeLogs = useCallback<StoreValue['removeLogs']>(
-    (ids) => {
-      const cur = ref.current;
-      const del = new Set(ids);
-      for (const id of ids) {
-        const l = cur.logs.find((x) => x.id === id);
-        if (!l) continue;
-        // มีการพิมพ์ของชิ้นนี้ต่อจากดวงนี้แล้ว → ย้อนไม่ได้ (กันรอบเพี้ยน)
-        const later = cur.logs.some((x) => !del.has(x.id) && x.id > l.id && (x.unitId === l.unitId || x.sourceId === l.id));
-        if (later) return { ok: false, error: `${l.barcode} มีการพิมพ์ต่อจากนี้แล้ว — ย้อนกลับไม่ได้` };
-      }
-      commit({ ...cur, logs: cur.logs.filter((x) => !del.has(x.id)) });
-      return { ok: true, value: undefined };
-    },
-    [commit],
+  const actions = useMemo(
+    () => ({
+      addItem: (d: Omit<MasterItem, 'id'>) => run<MasterItem>('addItem', { data: d }),
+      updateItem: (id: number, d: Omit<MasterItem, 'id'>) => run<MasterItem>('updateItem', { id, data: d }),
+      deleteItem: (id: number) => run<void>('deleteItem', { id }),
+      addStaff: (d: Omit<Staff, 'id'>) => run<Staff>('saveStaff', { data: d }),
+      updateStaff: (id: number, d: Omit<Staff, 'id'>) => run<Staff>('saveStaff', { id, data: d }),
+      deleteStaff: (id: number) => run<void>('deleteStaff', { id }),
+      addDepartment: (d: Omit<Department, 'id'>) => run<Department>('saveDepartment', { data: d }),
+      updateDepartment: (id: number, d: Omit<Department, 'id'>) => run<Department>('saveDepartment', { id, data: d }),
+      deleteDepartment: (id: number) => run<void>('deleteDepartment', { id }),
+      registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => run<Unit[]>('registerUnits', input),
+      disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => run<Unit>('disposeUnit', { unitId, reason, note }),
+      sterilize: (unitId: number, mfg: string, exp: string, opts: Parameters<StoreValue['sterilize']>[3]) =>
+        // รอบที่ใช้ไปตามที่หน้าจอนี้เห็น — เซิร์ฟเวอร์ปฏิเสธถ้าเครื่องอื่นพิมพ์ชิ้นนี้ไปก่อน
+        run<PrintLog>('sterilize', { unitId, mfg, exp, ...opts, expectedUsed: cyclesUsed(ref.current.logs, unitId) }),
+      createReprint: (logId: number, override?: { codeType?: CodeType }) => run<PrintLog>('createReprint', { logId, codeType: override?.codeType }),
+      importData: (d: AppData) => run<{ skipped: number }>('importData', { data: d }),
+      removeLogs: (ids: number[]) => run<void>('removeLogs', { ids }),
+      voidPrint: (logId: number, input: { reason: string; staffId: number }) => run<PrintLog>('voidPrint', { logId, ...input }),
+    }),
+    [run],
   );
 
   const activeLogs = useMemo(() => data.logs.filter((l) => !l.voidedAt), [data.logs]);
@@ -435,28 +282,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       staff: data.staff,
       departments: data.departments,
       saveError,
+      reload,
       getUnitInfo,
       findUnitBySn,
       suggestSns,
-      addItem,
-      updateItem,
-      deleteItem,
-      addStaff,
-      updateStaff,
-      deleteStaff,
-      addDepartment,
-      updateDepartment,
-      deleteDepartment,
-      registerUnits,
-      disposeUnit,
-      sterilize,
-      createReprint,
-      replaceAll,
-      removeLogs,
-      voidPrint,
       voidableLog,
+      ...actions,
     }),
-    [ready, data, saveError, getUnitInfo, findUnitBySn, suggestSns, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, addDepartment, updateDepartment, deleteDepartment, registerUnits, disposeUnit, sterilize, createReprint, replaceAll, removeLogs, voidPrint, voidableLog, activeLogs],
+    [ready, data, saveError, reload, getUnitInfo, findUnitBySn, suggestSns, voidableLog, actions, activeLogs],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

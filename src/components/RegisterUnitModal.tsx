@@ -2,11 +2,11 @@
 
 import { BarcodeOutlined, NumberOutlined, PlusCircleOutlined, SwapOutlined } from '@ant-design/icons';
 import { Alert, App, Checkbox, Col, Flex, Form, Input, InputNumber, Modal, Radio, Row, Select, Tag, Typography } from 'antd';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { addDays, todayISO } from '@/lib/date';
 import { usePrintStickers } from '@/lib/print';
 import { useStore } from '@/lib/store';
-import type { Unit } from '@/lib/types';
+import type { PrintLog, Unit } from '@/lib/types';
 import { SN_PATTERN } from '@/lib/units';
 
 interface Props {
@@ -36,6 +36,7 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
   const printStickers = usePrintStickers();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
+  const [busy, setBusy] = useState(false);
 
   const itemId = Form.useWatch('itemId', form);
   const mode = Form.useWatch('mode', form);
@@ -59,9 +60,11 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
   const onOk = async () => {
     const v = await form.validateFields().catch(() => null);
     if (!v) return; // ฟอร์มยังไม่ครบ — antd แสดงข้อความเตือนในช่องแล้ว
-    if (!item) return;
+    if (!item || busy) return;
     const sns = v.mode === 'auto' ? suggestSns(item.id, v.qty) : [v.sn!.trim()];
-    const res = registerUnits({ itemId: item.id, sns, manufacturerSn: v.mode === 'manufacturer', replacesSn: replaces?.sn });
+    setBusy(true);
+    const res = await registerUnits({ itemId: item.id, sns, manufacturerSn: v.mode === 'manufacturer', replacesSn: replaces?.sn });
+    setBusy(false);
     if (!res.ok) {
       message.error(res.error);
       return;
@@ -73,16 +76,20 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
       // พิมพ์รอบที่ 1 — บันทึกทันที มีปุ่มย้อนกลับหลังพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์)
       const mfg = todayISO();
       const exp = addDays(mfg, item.shelf);
-      const logs = res.value
-        .map((u) => sterilize(u.id, mfg, exp, { staffId: v.staffId! }))
-        .flatMap((r) => (r.ok ? [r.value] : []));
+      const logs: PrintLog[] = [];
+      for (const u of res.value) {
+        const r = await sterilize(u.id, mfg, exp, { staffId: v.staffId! });
+        if (r.ok) logs.push(r.value);
+        else message.error(`${u.sn}: ${r.error}`);
+      }
+      if (!logs.length) return;
       setTimeout(
         () =>
           printStickers(logs, {
             undo: {
               title: `พิมพ์รอบที่ 1 ของ ${logs.length} ชิ้นแล้ว`,
-              onUndo: () => {
-                const r = removeLogs(logs.map((l) => l.id));
+              onUndo: async () => {
+                const r = await removeLogs(logs.map((l) => l.id));
                 if (r.ok) message.info('ย้อนกลับแล้ว — ชิ้นที่ลงทะเบียนยังเป็น "ชิ้นใหม่" ยิง SN ที่หน้าพิมพ์เพื่อพิมพ์รอบที่ 1 ได้');
                 else message.error(r.error);
               },
@@ -100,6 +107,7 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
       zIndex={1100}
       onCancel={onClose}
       onOk={onOk}
+      confirmLoading={busy}
       okText={'ลงทะเบียน'}
       cancelText="ยกเลิก"
       width={560}

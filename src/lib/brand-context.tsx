@@ -1,11 +1,12 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { getJSON, postJSON } from './api';
 
 /**
  * โลโก้และชื่อที่แสดงในแถบเมนู
  * ค่าเริ่มต้นอยู่ใน DEFAULT_BRAND (ไฟล์ใน public/brand/) — แอดมินเปลี่ยนได้ที่เมนู "ตั้งค่า"
- * ค่าที่แอดมินตั้งเก็บในเบราว์เซอร์ของเครื่องนั้น (โลโก้เก็บเป็นรูปย่อแบบ data URL)
+ * ค่าที่แอดมินตั้งเก็บในฐานข้อมูล (ตาราง Settings) ทุกเครื่องเห็นเหมือนกัน (โลโก้เก็บเป็นรูปย่อแบบ data URL)
  */
 export interface Brand {
   hospitalName: string;
@@ -24,15 +25,14 @@ export const DEFAULT_BRAND: Brand = {
   companyLogo: '/brand/company-logo.png',
 };
 
-const KEY = 'sticker_brand';
-
 interface BrandValue {
   brand: Brand;
   /** ค่าที่แอดมินตั้งเอง (ไม่มี = ใช้ค่าเริ่มต้น) */
   custom: Partial<Brand>;
-  update: (patch: Partial<Brand>) => void;
-  /** กลับไปใช้ค่าเริ่มต้นของช่องที่ระบุ */
-  reset: (keys: (keyof Brand)[]) => void;
+  /** ใส่ค่าใหม่ — throw เมื่อบันทึกไม่สำเร็จ */
+  update: (patch: Partial<Brand>) => Promise<void>;
+  /** กลับไปใช้ค่าเริ่มต้นของช่องที่ระบุ — throw เมื่อบันทึกไม่สำเร็จ */
+  reset: (keys: (keyof Brand)[]) => Promise<void>;
 }
 
 const BrandContext = createContext<BrandValue | null>(null);
@@ -41,40 +41,28 @@ export function BrandProvider({ children }: { children: ReactNode }) {
   const [custom, setCustom] = useState<Partial<Brand>>({});
 
   useEffect(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
-      if (raw && typeof raw === 'object') setCustom(raw);
-    } catch {
-      /* ไม่มี / อ่านไม่ได้ → ใช้ค่าเริ่มต้น */
-    }
+    getJSON<{ custom: Partial<Brand> }>('/api/brand')
+      .then((r) => setCustom(r.custom ?? {}))
+      .catch(() => {
+        /* เชื่อมต่อไม่ได้ → ใช้ค่าเริ่มต้น */
+      });
   }, []);
 
-  const save = useCallback((next: Partial<Brand>) => {
-    setCustom(next);
-    try {
-      localStorage.setItem(KEY, JSON.stringify(next));
-    } catch {
-      throw new Error('พื้นที่เก็บข้อมูลของเบราว์เซอร์เต็ม — ลองใช้รูปที่เล็กลง');
-    }
+  const save = useCallback(async (patch: Partial<Record<keyof Brand, string | null>>) => {
+    const r = await postJSON<{ ok: boolean; custom?: Partial<Brand>; error?: string }>('/api/brand', { patch });
+    if (!r.ok) throw new Error(r.error || 'บันทึกไม่สำเร็จ');
+    setCustom(r.custom ?? {});
   }, []);
 
-  /** ใส่ค่าใหม่ — ช่องที่เป็น undefined = กลับไปใช้ค่าเริ่มต้น */
   const update = useCallback(
     (patch: Partial<Brand>) => {
-      const next = { ...custom, ...patch };
-      (Object.keys(next) as (keyof Brand)[]).forEach((k) => next[k] === undefined && delete next[k]);
-      save(next);
+      const p: Partial<Record<keyof Brand, string | null>> = {};
+      (Object.keys(patch) as (keyof Brand)[]).forEach((k) => (p[k] = patch[k] ?? null));
+      return save(p);
     },
-    [custom, save],
+    [save],
   );
-  const reset = useCallback(
-    (keys: (keyof Brand)[]) => {
-      const next = { ...custom };
-      keys.forEach((k) => delete next[k]);
-      save(next);
-    },
-    [custom, save],
-  );
+  const reset = useCallback((keys: (keyof Brand)[]) => save(Object.fromEntries(keys.map((k) => [k, null]))), [save]);
 
   const brand = useMemo<Brand>(() => {
     const b = { ...DEFAULT_BRAND };
@@ -95,7 +83,7 @@ export function useBrand(): BrandValue {
 }
 
 /**
- * อ่านไฟล์รูปแล้วย่อให้เล็กพอเก็บในเบราว์เซอร์ (PNG ไม่เกิน maxW × maxH พิกเซล)
+ * อ่านไฟล์รูปแล้วย่อให้เล็กพอเก็บในฐานข้อมูล (PNG ไม่เกิน maxW × maxH พิกเซล)
  * SVG เก็บตามเดิม (ไฟล์เล็กและคมทุกขนาด)
  */
 export async function imageFileToDataUrl(file: File, maxW: number, maxH: number): Promise<string> {

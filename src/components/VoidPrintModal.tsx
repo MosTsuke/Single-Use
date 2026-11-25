@@ -36,7 +36,7 @@ export default function VoidPrintModal({ unit, onClose }: { unit: Unit | null; o
     if (!log) return;
     const v = await form.validateFields().catch(() => null);
     if (!v) return;
-    const res = voidPrint(log.id, { reason: v.reason!, staffId: v.staffId! });
+    const res = await voidPrint(log.id, { reason: v.reason!, staffId: v.staffId! });
     if (!res.ok) return message.error(res.error);
     message.success(`ยกเลิกใบรอบ ${log.round}/${log.maxRound} ของ ${unit!.sn} แล้ว — รอบกลับเป็น ${after}/${log.maxRound}`);
     onClose();

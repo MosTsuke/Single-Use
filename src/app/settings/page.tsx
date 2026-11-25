@@ -27,14 +27,14 @@ export default function SettingsPage() {
     try {
       // โลโก้โรงพยาบาล = สี่เหลี่ยมเล็ก, โลโก้บริษัท = แนวนอน
       const url = key === 'hospitalLogo' ? await imageFileToDataUrl(file, 256, 256) : await imageFileToDataUrl(file, 600, 200);
-      update({ [key]: url });
+      await update({ [key]: url });
       message.success('เปลี่ยนโลโก้แล้ว');
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
-    return false; // ไม่ส่งไฟล์ขึ้นเซิร์ฟเวอร์
+    return false; // ไม่ให้ Upload ส่งไฟล์เอง — ย่อรูปแล้วบันทึกเองด้านบน
   };
 
   const saveNames = async () => {
@@ -46,8 +46,12 @@ export default function SettingsPage() {
       const val = (v[k] ?? '').trim();
       patch[k] = !val || val === DEFAULT_BRAND[k] ? undefined : val;
     });
-    update(patch);
-    message.success('บันทึกชื่อแล้ว');
+    try {
+      await update(patch);
+      message.success('บันทึกชื่อแล้ว');
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const logoCard = (key: LogoKey, title: string, hint: string, previewBox: { w: number; h: number; white?: boolean }) => {
@@ -87,7 +91,7 @@ export default function SettingsPage() {
               เลือกรูปใหม่
             </Button>
           </Upload>
-          <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => (reset([key]), message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'))}>
+          <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => reset([key]).then(() => message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'), (e: Error) => message.error(e.message))}>
             ใช้ค่าเริ่มต้น
           </Button>
         </Space>
@@ -101,7 +105,7 @@ export default function SettingsPage() {
         type="info"
         showIcon
         title="โลโก้และชื่อที่แสดงในแถบเมนูด้านซ้าย"
-        description="ค่าที่ตั้งจะเก็บในเบราว์เซอร์ของเครื่องนี้ — ถ้าใช้หลายเครื่องต้องตั้งแต่ละเครื่อง (หรือแก้ค่าเริ่มต้นในโค้ดให้ทุกเครื่องเหมือนกัน)"
+        description="ค่าที่ตั้งเก็บในฐานข้อมูลที่เครื่องแม่ ทุกเครื่องที่เปิดโปรแกรมเห็นเหมือนกัน (เครื่องอื่นเห็นหลังเปิดหน้าใหม่)"
       />
       <Row gutter={[20, 20]}>
         <Col xs={24} lg={12}>
@@ -137,7 +141,12 @@ export default function SettingsPage() {
             <Button
               icon={<UndoOutlined />}
               disabled={!custom.hospitalName && !custom.appName && !custom.companyName}
-              onClick={() => (reset(['hospitalName', 'appName', 'companyName']), message.success('กลับไปใช้ชื่อเริ่มต้นแล้ว'))}
+              onClick={() =>
+                reset(['hospitalName', 'appName', 'companyName']).then(
+                  () => message.success('กลับไปใช้ชื่อเริ่มต้นแล้ว'),
+                  (e: Error) => message.error(e.message),
+                )
+              }
             >
               ใช้ค่าเริ่มต้น
             </Button>

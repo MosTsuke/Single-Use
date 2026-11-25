@@ -56,22 +56,26 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
     [confirming, codeType],
   );
 
-  const confirmReprint = () => {
+  const confirmReprint = async () => {
     if (!confirming) return;
     const src = confirming;
     setConfirming(null);
     // ปิดหน้าต่างให้เสร็จก่อน แล้วค่อยเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
     // (หน้าต่างพิมพ์จะหยุดแอนิเมชันปิด modal ทำให้ modal ค้างจนปิดไม่ได้)
     onClose();
-    const r = createReprint(src.id, { codeType });
-    if (!r) return;
+    const res = await createReprint(src.id, { codeType });
+    if (!res.ok) {
+      message.error(res.error);
+      return;
+    }
+    const r = res.value;
     setTimeout(
       () =>
         printStickers([r], {
           undo: {
             title: `พิมพ์ซ้ำ ${r.name} รอบ ${r.round}/${r.maxRound} แล้ว`,
-            onUndo: () => {
-              const res = removeLogs([r.id]);
+            onUndo: async () => {
+              const res = await removeLogs([r.id]);
               if (res.ok) message.info('ย้อนกลับแล้ว — ไม่นับการพิมพ์ซ้ำครั้งนี้');
               else message.error(res.error);
             },

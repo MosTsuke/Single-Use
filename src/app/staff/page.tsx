@@ -57,7 +57,7 @@ export default function StaffPage() {
   const onSave = async () => {
     const v = await form.validateFields().catch(() => null);
     if (!v) return;
-    const res = editing ? updateStaff(editing.id, v) : addStaff(v);
+    const res = editing ? await updateStaff(editing.id, v) : await addStaff(v);
     if (!res.ok) {
       message.error(res.error);
       return;
@@ -66,8 +66,8 @@ export default function StaffPage() {
     setOpen(false);
   };
 
-  const setActive = (s: Staff, active: boolean) => {
-    const res = updateStaff(s.id, { ...s, active });
+  const setActive = async (s: Staff, active: boolean) => {
+    const res = await updateStaff(s.id, { ...s, active });
     if (res.ok) message.success(`${s.name}: ${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน (ไม่แสดงในหน้าพิมพ์)'}`);
     else message.error(res.error);
   };
@@ -134,8 +134,8 @@ export default function StaffPage() {
             okText="ลบ"
             cancelText="ยกเลิก"
             okButtonProps={{ danger: true, disabled: r.prints > 0 }}
-            onConfirm={() => {
-              const res = deleteStaff(r.id);
+            onConfirm={async () => {
+              const res = await deleteStaff(r.id);
               if (res.ok) message.success(`ลบ ${r.name} แล้ว`);
               else message.error(res.error);
             }}

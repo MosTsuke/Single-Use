@@ -214,12 +214,12 @@ function SterilizeStation() {
   const updateRow = (key: number, patch: Partial<QueueRow>) =>
     setQueue((q) => q.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
-  /** บันทึกรอบของรายการที่จะพิมพ์ */
-  const doSterilize = (list: Resolved[], staffId: number) => {
+  /** บันทึกรอบของรายการที่จะพิมพ์ (ที่เครื่องแม่ ทีละรายการ) */
+  const doSterilize = async (list: Resolved[], staffId: number) => {
     const logs: PrintLog[] = [];
     for (const r of list) {
       if (!r.info || !r.exp) continue;
-      const res = sterilize(r.info.unit.id, r.mfg, r.exp, {
+      const res = await sterilize(r.info.unit.id, r.mfg, r.exp, {
         staffId,
         round: r.round,
         note: r.note,
@@ -230,7 +230,10 @@ function SterilizeStation() {
         showDept: r.showDept,
       });
       if (res.ok) logs.push(res.value);
-      else message.error(`${r.sn}: ${res.error}`);
+      else {
+        beep('error');
+        message.error(`${r.sn}: ${res.error}`);
+      }
     }
     if (logs.length) setRecent((prev) => [...logs.slice().reverse(), ...prev].slice(0, 30));
     return logs;
@@ -267,8 +270,8 @@ function SterilizeStation() {
     }
   }, [params]);
 
-  const printAll = () => {
-    if (!ready.length) return;
+  const printAll = async () => {
+    if (!ready.length || printing) return;
     if (!currentStaff) {
       beep('error');
       message.warning('กรุณาเลือกเจ้าหน้าที่ผู้พิมพ์ก่อน');
@@ -276,19 +279,22 @@ function SterilizeStation() {
     }
     // บันทึกรอบทันที (ไม่ต้องกดยืนยัน) — หลังพิมพ์มีปุ่ม "ไม่ได้พิมพ์ – ย้อนกลับ" ให้กดเฉพาะกรณีกดยกเลิก/สติ๊กเกอร์ไม่ออก
     const list = ready;
-    const logs = doSterilize(list, currentStaff.id);
-    if (!logs.length) return;
+    setPrinting(true);
+    const logs = await doSterilize(list, currentStaff.id);
+    if (!logs.length) {
+      setPrinting(false);
+      return;
+    }
     const printedSns = new Set(logs.map((l) => l.barcode));
     const doneRows = queue.filter((x) => list.some((r) => r.key === x.key) && printedSns.has(x.sn));
     const done = new Set(doneRows.map((x) => x.key));
     setQueue((q) => q.filter((x) => !done.has(x.key)));
     setSelected(null);
-    setPrinting(true);
     printStickers(logs, {
       undo: {
         title: `ส่งพิมพ์และบันทึก ${logs.length} ดวงแล้ว`,
-        onUndo: () => {
-          const res = removeLogs(logs.map((l) => l.id));
+        onUndo: async () => {
+          const res = await removeLogs(logs.map((l) => l.id));
           if (!res.ok) return message.error(res.error);
           // คืนรายการกลับเข้าคิว พร้อมรอบ/วันผลิต/หมายเหตุเดิม ให้กดพิมพ์ใหม่ได้ทันที
           const ids = new Set(logs.map((l) => l.id));
