@@ -90,42 +90,63 @@ export default function Sticker({
     // 2) ชื่ออุปกรณ์: ไม่เกิน 2 บรรทัด (เกินตัดด้วย … ผ่าน CSS line-clamp)
     //    ชื่อสั้นใช้ขนาดเต็มบรรทัดเดียว · ชื่อยาวย่อตัวอักษรลงจน 2 บรรทัดพอดีพื้นที่ที่เหลือ
     //    ถ้าย่อถึงขนาดเล็กสุดแล้วยังไม่พอ 2 บรรทัด → เหลือ 1 บรรทัด + …
-    const el = nameRef.current;
-    if (el) {
-      el.style.fontSize = "";
-      el.style.webkitLineClamp = "";
-      const MIN_PX = 7.5; // ≈ 2 มม. — เล็กกว่านี้พิมพ์ที่ 203 dpi แล้วอ่านยาก
-      let size = parseFloat(getComputedStyle(el).fontSize);
-      const lineH = () => parseFloat(getComputedStyle(el).lineHeight) || size * 1.35;
-      const oneLine = () => {
-        const prev = el.style.whiteSpace;
-        el.style.whiteSpace = "nowrap";
-        const ok = el.scrollWidth <= el.clientWidth + 0.5;
-        el.style.whiteSpace = prev;
-        return ok;
-      };
-      const need = () => (oneLine() ? 1 : 2) * lineH();
-      let guard = 0;
-      while (need() > el.clientHeight + 0.5 && size > MIN_PX && guard++ < 120) {
-        size = Math.max(MIN_PX, size - 0.25);
-        el.style.fontSize = `${size}px`;
-      }
-      // แบบบาร์โคด: ยังไม่พอ → ลดความสูงแท่งบาร์โคดลงได้ถึง 3.6 มม. (ความกว้างแท่งไม่เปลี่ยน ยังยิงอ่านได้)
-      const svg = svgRef.current;
-      if (code === "barcode" && svg) {
-        // clientHeight เป็นขนาดจริงของเลย์เอาต์ (ไม่โดนการขยายตัวอย่างบนจอ)
-        svg.style.height = "";
-        let h = svg.clientHeight;
-        const minH = (3.6 * 96) / 25.4; // 3.6 มม. เป็น px
-        guard = 0;
-        while (need() > el.clientHeight + 0.5 && h > minH && guard++ < 80) {
-          h = Math.max(minH, h - 0.5);
-          svg.style.height = `${h}px`;
+    const fitName = () => {
+      const el = nameRef.current;
+      if (el) {
+        el.style.fontSize = "";
+        el.style.webkitLineClamp = "";
+        const MIN_PX = 7.5; // ≈ 2 มม. — เล็กกว่านี้พิมพ์ที่ 203 dpi แล้วอ่านยาก
+        let size = parseFloat(getComputedStyle(el).fontSize);
+        const lineH = () =>
+          parseFloat(getComputedStyle(el).lineHeight) || size * 1.35;
+        // จำนวนบรรทัดจริงของชื่อ (วัดตอนปลด line-clamp ชั่วคราว) → ต้องการพื้นที่ min(บรรทัด, 2) บรรทัด
+        const lines = () => {
+          const d = el.style.display;
+          const c = el.style.webkitLineClamp;
+          el.style.display = "block";
+          el.style.webkitLineClamp = "unset";
+          const n = Math.max(1, Math.round(el.scrollHeight / lineH()));
+          el.style.display = d;
+          el.style.webkitLineClamp = c;
+          return n;
+        };
+        const need = () => Math.min(2, lines()) * lineH();
+        let guard = 0;
+        while (
+          need() > el.clientHeight + 0.5 &&
+          size > MIN_PX &&
+          guard++ < 120
+        ) {
+          size = Math.max(MIN_PX, size - 0.25);
+          el.style.fontSize = `${size}px`;
         }
+        // แบบบาร์โคด: ยังไม่พอ → ลดความสูงแท่งบาร์โคดลงได้ถึง 3.6 มม. (ความกว้างแท่งไม่เปลี่ยน ยังยิงอ่านได้)
+        const svg = svgRef.current;
+        if (code === "barcode" && svg) {
+          // clientHeight เป็นขนาดจริงของเลย์เอาต์ (ไม่โดนการขยายตัวอย่างบนจอ)
+          svg.style.height = "";
+          let h = svg.clientHeight;
+          const minH = (3.6 * 96) / 25.4; // 3.6 มม. เป็น px
+          guard = 0;
+          while (need() > el.clientHeight + 0.5 && h > minH && guard++ < 80) {
+            h = Math.max(minH, h - 0.5);
+            svg.style.height = `${h}px`;
+          }
+        }
+        if (need() > el.clientHeight + 0.5) el.style.webkitLineClamp = "1";
       }
-      if (need() > el.clientHeight + 0.5) el.style.webkitLineClamp = "1";
-    }
+    };
+    fitName();
+    // ฟอนต์ Sarabun โหลดเสร็จทีหลัง (ตัวอักษรกว้างขึ้น ชื่ออาจขึ้นบรรทัดใหม่) → จัดใหม่อีกครั้ง
+    let alive = true;
+    const refit = () => alive && fitName();
+    document.fonts?.ready.then(refit);
+    document.fonts?.addEventListener?.("loadingdone", refit);
     onReady?.();
+    return () => {
+      alive = false;
+      document.fonts?.removeEventListener?.("loadingdone", refit);
+    };
   }, [data, code, onReady]);
 
   // บรรทัด "ใช้ที่ ..." — มีหน่วยงานและไม่ได้ปิดไว้ → สติ๊กเกอร์ใช้โหมด 4 บรรทัด (ตัวอักษรเล็กลงเล็กน้อย)
