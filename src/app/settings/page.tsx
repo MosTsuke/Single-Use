@@ -60,15 +60,13 @@ export default function SettingsPage() {
 
   const logoCard = (key: LogoKey, title: string, hint: string, previewBox: { w: number; h: number; white?: boolean }) => {
     const isCustom = !!custom[key];
-    // โลโก้โรงพยาบาลต้องเป็นของจริงเสมอ — เปลี่ยนรูปได้ แต่ไม่กลับไปใช้รูปตัวอย่าง
-    const canReset = demo || key !== 'hospitalLogo';
     return (
       <Card
         title={
           <Space>
             <PictureOutlined style={{ color: '#2563eb' }} />
             {title}
-            {canReset && (isCustom ? <Tag color="blue">ตั้งเอง</Tag> : <Tag>ค่าเริ่มต้น</Tag>)}
+            {isCustom ? <Tag color="blue">ตั้งเอง</Tag> : <Tag>ค่าเริ่มต้น</Tag>}
           </Space>
         }
         style={{ height: '100%' }}
@@ -97,11 +95,10 @@ export default function SettingsPage() {
               เลือกรูปใหม่
             </Button>
           </Upload>
-          {canReset && (
-            <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => reset([key]).then(() => message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'), (e: Error) => message.error(e.message))}>
-              ใช้ค่าเริ่มต้น
-            </Button>
-          )}
+          {/* โลโก้โรงพยาบาลไม่บังคับ: ค่าเริ่มต้น = ไอคอนกลาง (ชื่อโรงพยาบาลยังต้องมีเสมอที่หน้างาน) */}
+          <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => reset([key]).then(() => message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'), (e: Error) => message.error(e.message))}>
+            ใช้ค่าเริ่มต้น
+          </Button>
         </Space>
       </Card>
     );

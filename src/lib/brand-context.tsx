@@ -30,7 +30,7 @@ export const DEFAULT_BRAND: Brand = {
 interface BrandValue {
   /** โหลดค่าแล้ว (หรือโหลดไม่ได้ — ใช้ค่าเริ่มต้น) */
   ready: boolean;
-  /** ตั้งโลโก้และชื่อโรงพยาบาลจริงแล้ว — ยังไม่ตั้ง = ต้องทำในขั้นตั้งค่าครั้งแรกก่อนใช้งาน (โหมด demo = true เสมอ) */
+  /** ตั้งชื่อโรงพยาบาลจริงแล้ว (โลโก้ไม่บังคับ) — ยังไม่ตั้ง = ต้องทำในขั้นตั้งค่าครั้งแรกก่อนใช้งาน (โหมด demo = true เสมอ) */
   hospitalSet: boolean;
   brand: Brand;
   /** ค่าที่แอดมินตั้งเอง (ไม่มี = ใช้ค่าเริ่มต้น) */
@@ -89,7 +89,8 @@ function DbBrandProvider({ children }: { children: ReactNode }) {
   const reset = useCallback((keys: (keyof Brand)[]) => save(Object.fromEntries(keys.map((k) => [k, null]))), [save]);
 
   const brand = useMemo(() => withDefaults(custom), [custom]);
-  const hospitalSet = !!custom.hospitalLogo?.trim() && !!custom.hospitalName?.trim();
+  // โลโก้ไม่บังคับ (ไม่ใส่ = ไอคอนกลาง) — บังคับแค่ชื่อโรงพยาบาลจริง
+  const hospitalSet = !!custom.hospitalName?.trim();
 
   return <BrandContext.Provider value={{ ready, hospitalSet, brand, custom, update, reset }}>{children}</BrandContext.Provider>;
 }

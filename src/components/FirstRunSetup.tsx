@@ -1,11 +1,11 @@
 'use client';
 
-import { IdcardOutlined, LockOutlined, PictureOutlined, SafetyCertificateOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons';
+import { IdcardOutlined, LockOutlined, SafetyCertificateOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons';
 import { Alert, App, Button, Card, Flex, Form, Input, Steps, Typography, Upload } from 'antd';
 import { useState } from 'react';
 import { AdminLoginForm } from '@/components/AdminLogin';
 import { MIN_PASSWORD, USERNAME_PATTERN, useAuth } from '@/lib/auth';
-import { imageFileToDataUrl, useBrand } from '@/lib/brand';
+import { DEFAULT_BRAND, imageFileToDataUrl, useBrand } from '@/lib/brand';
 
 const { Text, Title } = Typography;
 const SIDEBAR_BG = '#0f172a';
@@ -13,7 +13,7 @@ const SIDEBAR_BG = '#0f172a';
 /**
  * ตั้งค่าครั้งแรกหลังติดตั้ง — ต้องทำให้ครบก่อนใช้งาน:
  *   1) สร้างบัญชีแอดมิน (ไม่มีรหัสผ่านเริ่มต้น)
- *   2) โลโก้และชื่อโรงพยาบาล (ค่าเริ่มต้นในโปรแกรมเป็นตัวอย่าง)
+ *   2) ชื่อโรงพยาบาล (ค่าเริ่มต้นในโปรแกรมเป็นตัวอย่าง) + โลโก้ (ไม่บังคับ — ไม่ใส่ = ไอคอนกลาง)
  * ข้อมูลอื่น (รายการอุปกรณ์ เจ้าหน้าที่ หน่วยงาน) หน้างานเพิ่มเองทีหลังที่เมนูผู้ดูแลระบบ
  */
 export default function FirstRunSetup() {
@@ -141,10 +141,6 @@ function BrandStep() {
   };
 
   const onFinish = async (v: { hospitalName: string }) => {
-    if (!logo) {
-      setError('กรุณาเลือกรูปโลโก้โรงพยาบาล');
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -161,24 +157,29 @@ function BrandStep() {
       <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
         แสดงที่มุมซ้ายบนของทุกหน้า (เปลี่ยนภายหลังได้ที่เมนู ตั้งค่า)
       </Text>
-      <Form.Item label="โลโก้โรงพยาบาล" required>
+      <Form.Item label="โลโก้โรงพยาบาล (ไม่บังคับ)">
         <Flex align="center" gap={16}>
           <Flex justify="center" align="center" style={{ background: SIDEBAR_BG, borderRadius: 10, width: 112, height: 112, flex: 'none' }}>
-            {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="โลโก้โรงพยาบาล" style={{ maxWidth: 80, maxHeight: 80, objectFit: 'contain', borderRadius: 8 }} />
-            ) : (
-              <PictureOutlined style={{ fontSize: 32, color: '#475569' }} />
-            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logo ?? DEFAULT_BRAND.hospitalLogo} alt="โลโก้โรงพยาบาล" style={{ maxWidth: 80, maxHeight: 80, objectFit: 'contain', borderRadius: 8 }} />
           </Flex>
           <Flex vertical gap={8}>
-            <Upload accept="image/png,image/jpeg,image/webp,image/svg+xml" showUploadList={false} beforeUpload={pick}>
-              <Button icon={<UploadOutlined />} loading={reading}>
-                {logo ? 'เปลี่ยนรูป' : 'เลือกรูปโลโก้'}
-              </Button>
-            </Upload>
+            <Flex gap={8} wrap>
+              <Upload accept="image/png,image/jpeg,image/webp,image/svg+xml" showUploadList={false} beforeUpload={pick}>
+                <Button icon={<UploadOutlined />} loading={reading}>
+                  {logo ? 'เปลี่ยนรูป' : 'เลือกรูปโลโก้'}
+                </Button>
+              </Upload>
+              {logo && (
+                <Button type="link" onClick={() => setLogo(undefined)}>
+                  ไม่ใส่โลโก้
+                </Button>
+              )}
+            </Flex>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              แนะนำรูปสี่เหลี่ยมจัตุรัส พื้นหลังโปร่งใส (PNG / SVG / JPG ไม่เกิน 5 MB)
+              {logo
+                ? 'แนะนำรูปสี่เหลี่ยมจัตุรัส พื้นหลังโปร่งใส (PNG / SVG / JPG ไม่เกิน 5 MB)'
+                : 'ยังไม่มีโลโก้ ข้ามได้ — ระหว่างนี้แสดงไอคอนนี้แทน ใส่ทีหลังได้ที่เมนู ตั้งค่า'}
             </Text>
           </Flex>
         </Flex>
