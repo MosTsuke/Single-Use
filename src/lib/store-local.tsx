@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { ItemImport, PersonImport, UnitImport } from './csv-import';
 import { nowStamp } from './date';
 import { storage } from './storage';
 import { buildInfo, findVoidable, StoreContext, type Result, type StoreValue } from './store-core';
@@ -338,6 +339,35 @@ export function LocalStoreProvider({ children }: { children: ReactNode }) {
 
   const activeLogs = useMemo(() => data.logs.filter((l) => !l.voidedAt), [data.logs]);
 
+  // นำเข้าทีละชุดจาก CSV — หน้าเว็บตรวจกับข้อมูลในเครื่องนี้แล้ว (checkCsv) ที่นี่เพิ่มทั้งชุดทีเดียว
+  const importBatch = useCallback(
+    <K extends 'items' | 'staff' | 'departments'>(key: K, rows: Omit<AppData[K][number], 'id'>[]) => {
+      const cur = ref.current;
+      let id = nextId(cur[key]);
+      const added = rows.map((r) => ({ ...r, id: id++ })) as AppData[K];
+      commit({ ...cur, [key]: [...cur[key], ...added] });
+      return added;
+    },
+    [commit],
+  );
+  const strip = <T extends { line: number }>({ line: _line, ...rest }: T) => rest;
+  const importUnits = useCallback(
+    (rows: UnitImport[]): Result<Unit[]> => {
+      const cur = ref.current;
+      let id = nextId(cur.units);
+      const time = nowStamp();
+      const added: Unit[] = [];
+      for (const r of rows) {
+        const item = cur.items.find((i) => i.id === r.itemId);
+        if (!item) return { ok: false, error: `บรรทัด ${r.line}: ไม่พบรายการอุปกรณ์` };
+        added.push({ id: id++, sn: r.sn, itemId: item.id, maxRound: item.maxRound, manufacturerSn: true, registeredAt: time });
+      }
+      commit({ ...cur, units: [...cur.units, ...added] });
+      return { ok: true, value: added };
+    },
+    [commit],
+  );
+
   // หน้าเว็บเรียก action แบบ async (เหมือนโหมด db) — ที่นี่ทำเสร็จทันที
   const value = useMemo<StoreValue>(
     () => ({
@@ -372,9 +402,13 @@ export function LocalStoreProvider({ children }: { children: ReactNode }) {
       },
       removeLogs: async (ids) => removeLogs(ids),
       voidPrint: async (logId, input) => voidPrint(logId, input),
+      importItems: async (rows: ItemImport[]) => ({ ok: true, value: importBatch('items', rows.map(strip)) }),
+      importStaff: async (rows: PersonImport[]) => ({ ok: true, value: importBatch('staff', rows.map(strip)) }),
+      importDepartments: async (rows: PersonImport[]) => ({ ok: true, value: importBatch('departments', rows.map(strip)) }),
+      importUnits: async (rows: UnitImport[]) => importUnits(rows),
       replaceAll,
     }),
-    [ready, data, activeLogs, saveError, getUnitInfo, findUnitBySn, suggestSns, voidableLog, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, addDepartment, updateDepartment, deleteDepartment, registerUnits, disposeUnit, sterilize, createReprint, removeLogs, voidPrint, replaceAll],
+    [ready, data, activeLogs, saveError, getUnitInfo, findUnitBySn, suggestSns, voidableLog, addItem, updateItem, deleteItem, addStaff, updateStaff, deleteStaff, addDepartment, updateDepartment, deleteDepartment, registerUnits, disposeUnit, sterilize, createReprint, removeLogs, voidPrint, replaceAll, importBatch, importUnits],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

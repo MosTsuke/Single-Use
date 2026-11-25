@@ -3,6 +3,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { callAction, getAppData, getJSON } from './api';
 import type { Patch } from './api-types';
+import type { ItemImport, PersonImport, UnitImport } from './csv-import';
 import { useMode } from './mode';
 import { buildInfo, findVoidable, StoreContext, type StoreValue } from './store-core';
 import { LocalStoreProvider } from './store-local';
@@ -164,6 +165,10 @@ function DbStoreProvider({ children }: { children: ReactNode }) {
       createReprint: (logId: number, override?: { codeType?: CodeType }) => run<PrintLog>('createReprint', { logId, codeType: override?.codeType }),
       removeLogs: (ids: number[]) => run<void>('removeLogs', { ids }),
       voidPrint: (logId: number, input: { reason: string; staffId: number }) => run<PrintLog>('voidPrint', { logId, ...input }),
+      importItems: (rows: ItemImport[]) => run<MasterItem[]>('importItems', { rows }),
+      importStaff: (rows: PersonImport[]) => run<Staff[]>('importStaff', { rows }),
+      importDepartments: (rows: PersonImport[]) => run<Department[]>('importDepartments', { rows }),
+      importUnits: (rows: UnitImport[]) => run<Unit[]>('importUnits', { rows }),
     }),
     [run],
   );

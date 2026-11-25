@@ -623,3 +623,140 @@ export async function saveBrand(admin: Actor, patch: Record<string, string | nul
   });
   return loadBrand();
 }
+
+/* =====================================================================
+   นำเข้าทีละชุดจากไฟล์ CSV — เพิ่มเฉพาะของใหม่ ผิดแถวเดียวยกเลิกทั้งชุด
+   (หน้าเว็บตรวจและแสดงตัวอย่างก่อนแล้ว ที่นี่ตรวจซ้ำกับข้อมูลล่าสุดในฐานข้อมูล)
+   ===================================================================== */
+
+const MAX_IMPORT = 2000;
+
+function checkBatch<T extends { line?: unknown }>(rows: T[]): (T & { line: number })[] {
+  if (!Array.isArray(rows) || !rows.length) fail('ไม่มีข้อมูลที่จะนำเข้า');
+  if (rows.length > MAX_IMPORT) fail(`นำเข้าได้ครั้งละไม่เกิน ${MAX_IMPORT} แถว`);
+  return rows.map((r) => ({ ...r, line: Number(r.line) || 0 }));
+}
+
+/** ข้อผิดพลาดของแถวไหน */
+function atLine<T>(line: number, fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof UserError) fail(`บรรทัด ${line}: ${e.message}`);
+    throw e;
+  }
+}
+
+export async function importItems(admin: Actor, input: (Omit<MasterItem, 'id'> & { line?: number })[]): Promise<ActionOk<MasterItem[]>> {
+  const rows = checkBatch(input).map((r) => ({ line: r.line, ...atLine(r.line, () => checkItem(r)) }));
+  for (const r of rows) if (!r.prefix) fail(`บรรทัด ${r.line}: ไม่มีคำนำหน้า SN`);
+  return tx(async (t) => {
+    const ex = await rq(t).query(`SELECT Name AS name, SnPrefix AS prefix FROM dbo.Items WITH (UPDLOCK, HOLDLOCK) WHERE IsActive = 1`);
+    const names = new Set(ex.recordset.map((r: Row) => String(r.name).replace(/\s+/g, ' ').toLowerCase()));
+    const prefixes = new Set(ex.recordset.map((r: Row) => String(r.prefix).trim()));
+    for (const r of rows) {
+      const n = r.name.replace(/\s+/g, ' ').toLowerCase();
+      if (names.has(n)) fail(`บรรทัด ${r.line}: ชื่อ "${r.name}" มีอยู่แล้ว (หรือซ้ำในไฟล์)`);
+      if (prefixes.has(r.prefix)) fail(`บรรทัด ${r.line}: คำนำหน้า ${r.prefix} ถูกใช้แล้ว (หรือซ้ำในไฟล์)`);
+      names.add(n);
+      prefixes.add(r.prefix);
+    }
+    const ins = await rq(t)
+      .input('j', sql.NVarChar(sql.MAX), JSON.stringify(rows.map((r) => ({ n: r.name, s: r.shelf, m: r.maxRound, p: r.prefix, c: r.codeType }))))
+      .query(
+        `INSERT INTO dbo.Items (Name, ShelfDays, MaxRound, SnPrefix, DefaultCodeType)
+         OUTPUT INSERTED.ItemId AS id
+         SELECT n, s, m, p, c FROM OPENJSON(@j) WITH (n nvarchar(200), s int, m int, p varchar(8), c varchar(10))`,
+      );
+    const ids = ins.recordset.map((r: Row) => Number(r.id));
+    const items = (await rq(t).query(`${ITEM_SELECT} WHERE ItemId IN (${ids.join(',')}) ORDER BY ItemId`)).recordset.map(toItem);
+    await audit(t, { actor: 'admin', actorId: admin.id, actorName: admin.name, action: 'item.import', entity: 'Item', detail: { count: items.length } });
+    return { value: items, patch: { items } };
+  });
+}
+
+export async function importPeople(
+  admin: Actor,
+  kind: PeopleKind,
+  input: (Omit<Staff | Department, 'id'> & { line?: number })[],
+): Promise<ActionOk<(Staff | Department)[]>> {
+  const k = PEOPLE[kind];
+  const rows = checkBatch(input).map((r) =>
+    atLine(r.line, () => {
+      const name = text(r.name).replace(/\s+/g, ' ');
+      const code = text(r.code) || null;
+      if (!name) fail(k.emptyName);
+      if (name.length > k.maxName) fail(`ชื่อยาวเกิน ${k.maxName} ตัวอักษร`);
+      if (code && code.length > 20) fail('รหัสยาวเกิน 20 ตัวอักษร');
+      return { line: r.line, name, code };
+    }),
+  );
+  return tx(async (t) => {
+    const ex = await rq(t).query(`SELECT Name AS name, Code AS code FROM ${k.table} WITH (UPDLOCK, HOLDLOCK)`);
+    const names = new Set(ex.recordset.map((r: Row) => String(r.name).replace(/\s+/g, ' ').toLowerCase()));
+    const codes = new Set(ex.recordset.filter((r: Row) => r.code).map((r: Row) => String(r.code).trim().toLowerCase()));
+    for (const r of rows) {
+      const n = r.name.toLowerCase();
+      if (names.has(n)) fail(`บรรทัด ${r.line}: ${k.dupName(r.name)} (หรือซ้ำในไฟล์)`);
+      if (r.code && codes.has(r.code.toLowerCase())) fail(`บรรทัด ${r.line}: รหัส ${r.code} ถูกใช้แล้ว (หรือซ้ำในไฟล์)`);
+      names.add(n);
+      if (r.code) codes.add(r.code.toLowerCase());
+    }
+    const ins = await rq(t)
+      .input('j', sql.NVarChar(sql.MAX), JSON.stringify(rows.map((r) => ({ n: r.name, c: r.code }))))
+      .query(
+        `INSERT INTO ${k.table} (Name, Code, IsActive)
+         OUTPUT INSERTED.${k.key} AS id
+         SELECT n, c, 1 FROM OPENJSON(@j) WITH (n nvarchar(100), c nvarchar(20))`,
+      );
+    const ids = ins.recordset.map((r: Row) => Number(r.id));
+    const people = (await rq(t).query(`${k.select} WHERE ${k.key} IN (${ids.join(',')}) ORDER BY ${k.key}`)).recordset.map(toPerson);
+    await audit(t, {
+      actor: 'admin',
+      actorId: admin.id,
+      actorName: admin.name,
+      action: `${kind === 'staff' ? 'staff' : 'department'}.import`,
+      entity: kind === 'staff' ? 'Staff' : 'Department',
+      detail: { count: people.length },
+    });
+    return { value: people, patch: { [k.patchKey]: people } as Patch };
+  });
+}
+
+/** ลงทะเบียน SN จากผู้ผลิตหลายชิ้น (ชิ้นใหม่ ยังไม่นับรอบ) */
+export async function importUnits(input: { itemId: number; sn: string; line?: number }[]): Promise<ActionOk<Unit[]>> {
+  const rows = checkBatch(input).map((r) => ({ line: r.line, itemId: int(r.itemId), sn: text(r.sn) }));
+  return tx(async (t) => {
+    const ir = await rq(t).query(`SELECT ItemId AS id, MaxRound AS maxRound FROM dbo.Items WITH (UPDLOCK, HOLDLOCK) WHERE IsActive = 1`);
+    const maxRound = new Map(ir.recordset.map((r: Row) => [Number(r.id), Number(r.maxRound)]));
+    const seen = new Map<string, number>();
+    for (const r of rows) {
+      if (!maxRound.has(r.itemId)) fail(`บรรทัด ${r.line}: ไม่พบรายการอุปกรณ์`);
+      if (!SN_PATTERN.test(r.sn)) fail(`บรรทัด ${r.line}: SN ใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข สัญลักษณ์ ไม่มีช่องว่าง ไม่เกิน 40 ตัว`);
+      const k = normSn(r.sn);
+      if (seen.has(k)) fail(`บรรทัด ${r.line}: SN ${r.sn} ซ้ำกับบรรทัด ${seen.get(k)}`);
+      seen.set(k, r.line);
+    }
+    // SN ที่มีอยู่แล้ว (เช็คทีละ 500 — SQL Server รับพารามิเตอร์ได้ไม่เกิน ~2100 ตัวต่อคำสั่ง)
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const req = rq(t);
+      chunk.forEach((r, j) => req.input(`s${j}`, sql.VarChar(40), r.sn));
+      const dup = await req.query(`SELECT TOP 1 Sn AS sn FROM dbo.Units WHERE Sn IN (${chunk.map((_, j) => `@s${j}`).join(',')})`);
+      if (dup.recordset[0]) {
+        const sn = String(dup.recordset[0].sn);
+        fail(`บรรทัด ${seen.get(normSn(sn))}: SN ${sn} มีอยู่ในระบบแล้ว`);
+      }
+    }
+    const ins = await rq(t)
+      .input('j', sql.NVarChar(sql.MAX), JSON.stringify(rows.map((r) => ({ s: r.sn, i: r.itemId, m: maxRound.get(r.itemId) }))))
+      .query(
+        `INSERT INTO dbo.Units (Sn, ItemId, MaxRound, ManufacturerSn)
+         OUTPUT INSERTED.UnitId AS id
+         SELECT s, i, m, 1 FROM OPENJSON(@j) WITH (s varchar(40), i int, m int)`,
+      );
+    const units = await selectUnits(t, ins.recordset.map((r: Row) => Number(r.id)));
+    await audit(t, { actor: 'staff', action: 'unit.import', entity: 'Unit', detail: { count: units.length } });
+    return { value: units, patch: { units } };
+  });
+}

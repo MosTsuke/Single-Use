@@ -6,6 +6,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { thaiDateTime } from '@/lib/date';
 import { useStore } from '@/lib/store';
+import CsvImport from '@/components/CsvImport';
 import type { Staff } from '@/lib/types';
 
 const { Text } = Typography;
@@ -165,6 +166,7 @@ export default function StaffPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            <CsvImport kind="staff" />
             <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
               เพิ่มเจ้าหน้าที่
             </Button>

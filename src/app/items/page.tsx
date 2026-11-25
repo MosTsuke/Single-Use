@@ -36,6 +36,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { todayISO } from '@/lib/date';
 import Link from 'next/link';
+import CsvImport from '@/components/CsvImport';
 import ItemUnitsPanel from '@/components/ItemUnitsPanel';
 import { buildDemoData } from '@/lib/demo';
 import { useMode } from '@/lib/mode';
@@ -288,6 +289,7 @@ export default function ItemsPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            <CsvImport kind="items" />
             <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
               เพิ่มรายการอุปกรณ์
             </Button>

@@ -14,6 +14,7 @@ import { Suspense, useMemo, useState } from 'react';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
 import UnitTable from '@/components/UnitTable';
 import { useStore } from '@/lib/store';
+import CsvImport from '@/components/CsvImport';
 import type { UnitStatus } from '@/lib/types';
 
 type StatusFilter = 'all' | 'usable' | UnitStatus;
@@ -94,9 +95,12 @@ function UnitsView() {
       <Card
         title="อุปกรณ์รายชิ้น"
         extra={
-          <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister(true)}>
-            ลงทะเบียนอุปกรณ์
-          </Button>
+          <Flex gap={8} wrap>
+            <CsvImport kind="units" />
+            <Button type="primary" icon={<PlusCircleOutlined />} onClick={() => setRegister(true)}>
+              ลงทะเบียนอุปกรณ์
+            </Button>
+          </Flex>
         }
       >
         <Flex wrap gap={8} style={{ marginBottom: 16 }}>

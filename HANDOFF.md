@@ -86,6 +86,7 @@ src/components/
   DashCharts.tsx            กราฟแท่ง, ShareBar, Meter, Legend (SVG ทำเอง ไม่มี lib กราฟ)
   PrinterSettingsModal.tsx  เลื่อน X/Y, พิมพ์ทดสอบ, ทดสอบ QR
   AdminLogin.tsx            ฟอร์มเข้าสู่ระบบแอดมิน
+  CsvImport.tsx             ปุ่ม "ไฟล์ต้นแบบ" + "นำเข้า CSV" + หน้าต่างตรวจ/แสดงตัวอย่าง (ใช้ใน items, staff, departments, units)
   FirstRunSetup.tsx         (โหมดหน้างาน) ตั้งค่าครั้งแรก 2 ขั้น: บัญชีแอดมิน → โลโก้/ชื่อโรงพยาบาล (AppShell แสดงแทนทุกหน้าจนกว่าจะครบ)
 src/lib/
   types.ts                  ชนิดข้อมูลทั้งหมด (MasterItem, Unit, PrintLog, Staff, Department, ...)
@@ -94,6 +95,7 @@ src/lib/
   store.tsx                 (db) โหลดครั้งเดียว + action แบบ async เรียก /api/action + ถามเลขรุ่นทุก 4 วิ · StoreProvider เลือกโหมด
   store-local.tsx           (demo) ตรรกะรุ่นแรก เก็บ localStorage + replaceAll (นำเข้า / ข้อมูลตัวอย่าง)
   demo.ts                   สร้างข้อมูลตัวอย่าง (เฉพาะโหมดทดสอบ)
+  csv-import.ts             ไฟล์ต้นแบบ CSV (หัวตารางไทย + แถวตัวอย่าง #), อ่านไฟล์ UTF-8/windows-874, แยก CSV, ตรวจทุกแถว (checkCsv)
   api.ts, api-types.ts      fetch + ข้อความ "ต่อเครื่องแม่ไม่ได้" · ชนิด Patch / ActionResponse
   storage.ts                (demo) อ่าน/เขียน localStorage + normalizeData · (ทั้งสอง) normalizeLog, cleanPrefix
   units.ts                  กฎนับรอบ / สถานะ / สร้าง SN (ใช้ทั้งหน้าเว็บและเซิร์ฟเวอร์)
@@ -178,6 +180,9 @@ public/brand/               hospital-logo.svg (mock), company-logo.png (SP Medit
       ไม่มีปุ่มนำเข้าข้อมูล / โหลดข้อมูลตัวอย่าง · หน้าตั้งค่าไม่ให้โลโก้/ชื่อโรงพยาบาลกลับไปเป็นค่าตัวอย่าง
     - โหมดทดสอบ: เหมือนรุ่นแรกทุกอย่าง (ข้อมูลตัวอย่าง, นำเข้า/สำรอง, admin admin1234, เก็บในเบราว์เซอร์)
 13. **ชุดติดตั้ง**: แบบเดียวกับ med_dashboard (เจ้าของชี้ให้ใช้แบบนี้) — Next standalone + node.exe + .bat/.ps1 + Task Scheduler (SYSTEM) + firewall เฉพาะ localsubnet · port 3002 (med_dashboard ใช้ 3001)
+14. **นำเข้า CSV** (เจ้าของขอ): 4 เมนู · เพิ่มอย่างเดียว ไม่แก้ของเดิม · ผิดแถวเดียวไม่บันทึกเลย · ตรวจที่หน้าเว็บ (แสดงบรรทัดที่ผิด)
+    แล้วเซิร์ฟเวอร์ตรวจซ้ำใน transaction (`importItems`, `importPeople`, `importUnits` ใน repo.ts — insert ด้วย OPENJSON)
+    ข้อจำกัด: ตรวจซ้ำกับรายการที่ใช้งานอยู่ (รายการอุปกรณ์ที่ลบ/ปิดไปแล้วไม่นับ) · ไม่เกิน 2,000 แถว
 
 ---
 

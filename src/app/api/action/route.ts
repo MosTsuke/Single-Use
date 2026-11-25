@@ -22,6 +22,8 @@ const ACTIONS: Record<string, { admin?: boolean; run: Run }> = {
   voidPrint: { run: (a) => repo.voidPrint({ logId: a.logId, reason: a.reason, staffId: a.staffId }) },
   registerUnits: { run: (a) => repo.registerUnits({ itemId: a.itemId, sns: a.sns, manufacturerSn: !!a.manufacturerSn, replacesSn: a.replacesSn }) },
   disposeUnit: { run: (a) => repo.disposeUnit({ unitId: a.unitId, reason: a.reason, note: a.note }) },
+  // นำเข้า SN หลายชิ้นจาก CSV — สิทธิ์เดียวกับการลงทะเบียนทีละชิ้น
+  importUnits: { run: (a) => repo.importUnits(a.rows) },
   // แอดมิน
   addItem: { admin: true, run: (a, ad) => repo.addItem(ad!, a.data) },
   updateItem: { admin: true, run: (a, ad) => repo.updateItem(ad!, a.id, a.data) },
@@ -30,6 +32,9 @@ const ACTIONS: Record<string, { admin?: boolean; run: Run }> = {
   deleteStaff: { admin: true, run: (a, ad) => repo.deletePerson(ad!, 'staff', a.id) },
   saveDepartment: { admin: true, run: (a, ad) => repo.savePerson(ad!, 'departments', a.id ?? null, a.data) },
   deleteDepartment: { admin: true, run: (a, ad) => repo.deletePerson(ad!, 'departments', a.id) },
+  importItems: { admin: true, run: (a, ad) => repo.importItems(ad!, a.rows) },
+  importStaff: { admin: true, run: (a, ad) => repo.importPeople(ad!, 'staff', a.rows) },
+  importDepartments: { admin: true, run: (a, ad) => repo.importPeople(ad!, 'departments', a.rows) },
 };
 
 const reply = <T,>(body: ActionResponse<T>, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });

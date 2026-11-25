@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import type { AppData, CodeType, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
+import type { ItemImport, PersonImport, UnitImport } from './csv-import';
 import { cyclesUsed, unitStatus } from './units';
 
 /**
@@ -84,6 +85,12 @@ export interface StoreValue {
   voidPrint: (logId: number, input: { reason: string; staffId: number }) => Promise<Result<PrintLog>>;
   /** ดวงล่าสุดของชิ้นที่ยกเลิกได้ (ไม่มี = ยกเลิกไม่ได้) */
   voidableLog: (unit: Unit) => PrintLog | undefined;
+  /** นำเข้าทีละชุดจาก CSV (ตรวจแล้วด้วย checkCsv) — ผิดแถวเดียวไม่บันทึกเลย */
+  importItems: (rows: ItemImport[]) => Promise<Result<MasterItem[]>>;
+  importStaff: (rows: PersonImport[]) => Promise<Result<Staff[]>>;
+  importDepartments: (rows: PersonImport[]) => Promise<Result<Department[]>>;
+  /** ลงทะเบียน SN จากผู้ผลิตหลายชิ้น (ชิ้นใหม่) */
+  importUnits: (rows: UnitImport[]) => Promise<Result<Unit[]>>;
   /** โหมด demo เท่านั้น: แทนที่ข้อมูลทั้งหมด (นำเข้าไฟล์สำรอง / โหลดข้อมูลตัวอย่าง) */
   replaceAll?: (data: AppData) => void;
 }
