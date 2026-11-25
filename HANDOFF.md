@@ -2,7 +2,7 @@
 
 อ่านไฟล์นี้ก่อน แล้วค่อยอ่าน `README.md` (วิธีใช้) · `database/README.md` (ฐานข้อมูล) · `deploy/README.md` (ติดตั้งเครื่องหน้างาน)
 
-อัปเดตล่าสุด: 25 พ.ย. 2569
+อัปเดตล่าสุด: 25 พ.ย. 2569 (ย้ายข้อมูลไป SQL Server + ชุดติดตั้งเครื่องแม่แบบ offline)
 
 ---
 
@@ -17,17 +17,21 @@
 
 | | |
 |---|---|
-| Stack | Next.js 16.4.5 (App Router, Turbopack) · React 19 · antd 6 · TypeScript · dayjs (พ.ศ.) · jsbarcode (CODE128) · qrcode |
+| Stack | Next.js 16.4.5 (App Router, Turbopack) · React 19 · antd 6 · TypeScript · dayjs (พ.ศ.) · jsbarcode (CODE128) · qrcode · mssql (tedious) · @fontsource (Prompt, Sarabun ฝังในตัว) |
 | Repo | GitHub `MosTsuke/Single-Use` (เจ้าของ push เอง) |
-| Vercel | ใช้สาธิตเท่านั้น — ใช้งานจริงต้องรันบนเซิร์ฟเวอร์ใน LAN โรงพยาบาล |
-| ข้อมูลตอนนี้ | localStorage ของเบราว์เซอร์ (สาธิต) → แผน: Microsoft SQL Server ในโรงพยาบาล |
+| ใช้งานจริง | **เครื่องแม่ 1 เครื่อง** (Windows) ในแลนโรงพยาบาล ไม่มีอินเทอร์เน็ต — รัน `node.exe app\server.js` port 3002 เครื่องอื่นเปิดผ่าน `http://<IP>:3002` |
+| ข้อมูล | Microsoft SQL Server ที่มีอยู่แล้วบนเครื่องแม่ (หน้างานใช้ SSMS 18 / SQL Server 2019) — **ฐานใหม่ `SingleUseSticker` แยกจากฐานเดิม** login `singleuse_app` สิทธิ์เฉพาะฐานนี้ |
+| ชุดติดตั้ง | `./scripts/package-windows.sh` → `dist/singleuse-sticker-windows-*.zip` (แบบเดียวกับ med_dashboard) คู่มือ `deploy/windows/README-TH.txt` |
+| Vercel | รุ่นเดิมที่เก็บข้อมูลในเบราว์เซอร์ — รุ่นนี้ต้องมี SQL Server จึงรันบน Vercel เฉย ๆ ไม่ได้ |
 
 ```bash
 npm install
-npm run dev     # http://localhost:3000
+npm run dev     # http://localhost:3000  (ต้องมี SQL Server + .env.local — ดู README.md หัวข้อ "พัฒนาในเครื่อง")
 npm run lint    # = tsc --noEmit
-npm run build
+./scripts/package-windows.sh   # ชุดติดตั้งหน้างาน
 ```
+
+ทดสอบในเครื่องผู้พัฒนาใช้ Docker container `singleuse-test-sql` (SQL Server 2019, `127.0.0.1:14333`) — แยกจาก `cssd-mock-sql` ของ med_dashboard
 
 ---
 
@@ -51,15 +55,28 @@ npm run build
 
 ```
 src/app/
-  layout.tsx, page.tsx      (page.tsx redirect → /print)
+  layout.tsx, page.tsx      (page.tsx redirect → /print) · layout โหลดฟอนต์ Prompt/Sarabun จาก @fontsource (offline)
   globals.css               สไตล์สติ๊กเกอร์ทั้งหมด + @page 50×25mm + #print-area
-  print/page.tsx            คิวยิง SN → ตัวเลือกต่อดวง → พิมพ์ทั้งหมด
+  print/page.tsx            คิวยิง SN → ตัวเลือกต่อดวง → พิมพ์ทั้งหมด (บันทึกที่เครื่องแม่ทีละดวง แล้วค่อยสั่งพิมพ์)
   dashboard/page.tsx        สถิติตามช่วงเวลา + "สถานะ ณ วันนี้"
   units/page.tsx            แท็บสถานะ, ทำลาย, ทำลายหลายรายการ (เฉพาะแท็บรอทำลาย), ยกเลิกใบพิมพ์ผิด
   reports/page.tsx          รายงาน + ส่งออก CSV
   items | staff | departments | settings | admins /page.tsx   หน้าแอดมิน
+  api/data/route.ts         GET ข้อมูลทั้งหมด + เลขรุ่น (?gz=1 = บีบอัด gzip ให้หน้าเว็บแตกเอง)
+  api/version/route.ts      GET เลขรุ่นของข้อมูล (หน้าเว็บถามทุก 4 วินาที ไม่แตะฐานข้อมูล)
+  api/action/route.ts       POST งานบันทึกทั้งหมด { name, args } — ตรวจสิทธิ์แอดมินที่นี่
+  api/auth/route.ts         สถานะ/เข้าสู่ระบบ/สร้างบัญชีแรก/จัดการบัญชีแอดมิน
+  api/brand/route.ts        โลโก้/ชื่อ (ตาราง Settings)
+  api/health/route.ts       ตรวจว่าเชื่อมฐานข้อมูลได้ + schema version (ใช้ตอนติดตั้ง)
+src/instrumentation.ts      ตอนเปิดเซิร์ฟเวอร์: ต่อฐานข้อมูล (สร้าง/อัปเดตตาราง) + เริ่มสำรองข้อมูลอัตโนมัติ
+src/server/                 ฝั่งเซิร์ฟเวอร์เท่านั้น
+  db.ts                     อ่านค่า DB_* · pool · รันสคริปต์ database/0N_*.sql ที่ยังไม่ได้รัน · ปฏิเสธ login sysadmin
+  repo.ts                   อ่าน/บันทึกทุกอย่างใน transaction (กฎเดียวกับ store เดิม + ล็อกแถวของชิ้นกันพิมพ์ชนกัน)
+  auth.ts                   PBKDF2 + cookie session (HMAC กุญแจสุ่มต่อการเปิดโปรแกรม)
+  backup.ts                 BACKUP DATABASE วันละครั้ง (COPY_ONLY, 7 ไฟล์วนตามวัน)
+  version.ts                เลขรุ่นของข้อมูลในหน่วยความจำ (เพิ่มทุกครั้งที่บันทึกสำเร็จ)
 src/components/
-  AppShell.tsx              เมนูข้าง, โลโก้ รพ. บนซ้าย, โลโก้บริษัทล่าง, ล็อกหน้าแอดมิน
+  AppShell.tsx              เมนูข้าง, โลโก้ รพ. บนซ้าย, โลโก้บริษัทล่าง, ล็อกหน้าแอดมิน, หน้าตั้งค่าครั้งแรก, แจ้งเตือนต่อเครื่องแม่ไม่ได้
   AppProviders.tsx          รวม Provider (store, auth, brand, print)
   Sticker.tsx               หน้าตาสติ๊กเกอร์ (ใช้ทั้ง preview และตอนพิมพ์) + ลอจิกย่อชื่อ
   ReprintModal, RegisterUnitModal, DisposeModal, BulkDisposeModal, VoidPrintModal
@@ -67,18 +84,21 @@ src/components/
   PeriodPicker.tsx          ตัวเลือก วัน/เดือน/ปี/ปีงบฯ (ใช้ทั้งรายงานและแดชบอร์ด)
   DashCharts.tsx            กราฟแท่ง, ShareBar, Meter, Legend (SVG ทำเอง ไม่มี lib กราฟ)
   PrinterSettingsModal.tsx  เลื่อน X/Y, พิมพ์ทดสอบ, ทดสอบ QR
-  AdminLogin.tsx
+  AdminLogin.tsx            ฟอร์มเข้าสู่ระบบ + FirstAdminSetupCard (สร้างบัญชีแรก)
 src/lib/
   types.ts                  ชนิดข้อมูลทั้งหมด (MasterItem, Unit, PrintLog, Staff, Department, ...)
-  store.tsx                 state กลาง + action ทั้งหมด (จุดที่จะเปลี่ยนไปเรียก API)
-  storage.ts                interface DataStorage + LocalStorage + normalize ข้อมูลเก่า
-  units.ts                  กฎนับรอบ / สถานะ / สร้าง SN
-  print.tsx                 สั่ง window.print() + แจ้งเตือน "ไม่ได้พิมพ์ – ย้อนกลับ"
-  auth.tsx                  บัญชีแอดมิน (PBKDF2 ฝั่งเบราว์เซอร์)
+  store.tsx                 ข้อมูลกลางฝั่งหน้าเว็บ: โหลดครั้งเดียว + action แบบ async เรียก /api/action + ถามเลขรุ่นทุก 4 วิ
+  api.ts, api-types.ts      fetch + ข้อความ "ต่อเครื่องแม่ไม่ได้" · ชนิด Patch / ActionResponse
+  storage.ts                normalizeData/normalizeLog (ใช้ตอนนำเข้าไฟล์สำรอง และแปลงแถวจากฐานข้อมูล)
+  units.ts                  กฎนับรอบ / สถานะ / สร้าง SN (ใช้ทั้งหน้าเว็บและเซิร์ฟเวอร์)
+  print.tsx                 สั่ง window.print() + แจ้งเตือน "ไม่ได้พิมพ์ – ย้อนกลับ" · ตั้งค่าเครื่องพิมพ์ (localStorage ต่อเครื่อง)
+  auth.tsx                  สถานะแอดมินฝั่งหน้าเว็บ (ตรวจจริงที่ /api/auth) + ออกเองเมื่อไม่ใช้ 15 นาที
   brand-context.tsx         โลโก้/ชื่อ รพ./บริษัท (brand.ts = re-export เฉย ๆ ห้ามลบทิ้งถ้ายังไม่ลบไฟล์เก่า)
-  date.ts, beep.ts, demo.ts (ข้อมูลตัวอย่าง)
-database/                   สคริปต์ SQL Server (ดู database/README.md)
-deploy/                     ไฟล์ล็อกเครื่องพิมพ์ + kiosk printing บน Windows
+  date.ts, beep.ts
+database/                   สคริปต์ SQL Server (ดู database/README.md) — 00 ให้ IT รันใน SSMS, 01+ โปรแกรมรันเอง
+deploy/windows/             ไฟล์ที่อยู่ในชุดติดตั้ง: README-TH.txt, 1-start.bat … 4-update.bat, stop/uninstall, scripts/*.ps1
+deploy/windows/client/      เครื่องที่พิมพ์: ล็อกเครื่องพิมพ์ใน Chrome + Single-Use.bat (kiosk printing)
+scripts/package-windows.sh  สร้าง zip ชุดติดตั้ง (npm ci → tsc → next build standalone → node.exe → zip)
 public/brand/               hospital-logo.svg (mock), company-logo.png (SP Meditech ของจริง)
                             company-logo.svg = ไฟล์เก่า ไม่ได้ใช้แล้ว ลบได้
 ```
@@ -87,19 +107,23 @@ public/brand/               hospital-logo.svg (mock), company-logo.png (SP Medit
 
 ## 4. ข้อมูล
 
-### localStorage keys
+### ที่เก็บ
 
-| key | เก็บอะไร |
+| ที่ | เก็บอะไร |
 |---|---|
-| `sticker_masterItems` | รายการอุปกรณ์ |
-| `sticker_units` | อุปกรณ์รายชิ้น |
-| `sticker_printLogs` | สติ๊กเกอร์ทุกดวง (รวมดวงที่ยกเลิก) |
-| `sticker_staff` | เจ้าหน้าที่ |
-| `sticker_departments` | หน่วยงาน |
-| `printer_settings` | ชื่อเครื่อง/เลื่อน X,Y (ของแต่ละเครื่อง — ไม่ย้ายไป DB) |
-| `sticker_admins`, `sticker_adminSeeded` | บัญชีแอดมิน |
-| `sticker_brand` | โลโก้/ชื่อที่แก้ในหน้าตั้งค่า (ไม่มี = ใช้ค่าเริ่มต้น) |
-| sessionStorage `sticker_adminSession` | session แอดมิน |
+| SQL Server `SingleUseSticker` | รายการอุปกรณ์, อุปกรณ์รายชิ้น, ประวัติการพิมพ์, เจ้าหน้าที่, หน่วยงาน, บัญชีแอดมิน, โลโก้/ชื่อ (Settings), AuditLog — ดู `database/README.md` |
+| localStorage `printer_settings` | ชื่อเครื่อง/เลื่อน X,Y (ของแต่ละเครื่อง — ไม่ย้ายไป DB) |
+| sessionStorage `sticker_adminSession` | เวลาใช้งานล่าสุดของแอดมินในแท็บนี้ (ไม่มี = แท็บใหม่ → ออกจากระบบ) |
+| cookie `su_admin` (HttpOnly) | session แอดมิน ลงลายมือชื่อด้วยกุญแจสุ่มของโปรเซส (เปิดโปรแกรมใหม่ = เข้าสู่ระบบใหม่) |
+
+ค่าตั้งของเครื่องแม่: `singleuse.env` ในโฟลเดอร์ติดตั้ง (copy เป็น `app\.env.local` ทุกครั้งที่เปิด) — `DB_SERVER`, `DB_PORT` / `DB_INSTANCE`, `DB_USER`, `DB_PASSWORD`, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERT`, `PORT`, `DB_AUTO_BACKUP`
+
+### หลายเครื่องพร้อมกัน
+
+- หน้าเว็บโหลดข้อมูลทั้งหมดครั้งเดียว (คำนวณสถานะ/รายงานในเครื่องเหมือนเดิม) แล้วถาม `/api/version` ทุก 4 วินาที — เลขเปลี่ยน = โหลดใหม่
+- บันทึก: `/api/action` → เซิร์ฟเวอร์ตรวจกฎซ้ำใน transaction + `UPDLOCK` แถวของชิ้นนั้น → ส่ง Patch กลับมาใส่ในข้อมูลที่โหลดไว้
+- พิมพ์: หน้าเว็บส่ง `expectedUsed` (รอบที่ใช้ไปตามที่หน้าจอเห็น) ถ้าไม่ตรงฐานข้อมูล = เครื่องอื่นพิมพ์ไปก่อน → ปฏิเสธพร้อมข้อความ + โหลดใหม่
+- ฐานข้อมูลมี unique index `UX_PrintLogs_UnitRound_Active` กันรอบซ้ำอีกชั้น (ทดสอบยิงพร้อมกัน 4 คำขอ → บันทึก 1)
 
 ### กฎหลัก
 
@@ -130,18 +154,28 @@ public/brand/               hospital-logo.svg (mock), company-logo.png (SP Medit
 5. **ยกเลิกใบพิมพ์ผิด** (หน้า /units): ต้องใส่เหตุผล + เจ้าหน้าที่ → ใบนั้นถูกทำเครื่องหมาย `voidedAt` (ไม่ลบ) รอบกลับเป็นรอบก่อน และขึ้นในประวัติแบบขีดฆ่า
 6. **ทำลาย**: ช่อง "ลงทะเบียนชิ้นใหม่ทดแทน" ไม่ติ๊กเป็นค่าเริ่มต้น · ทำลายหลายรายการด้วย checkbox **เฉพาะแท็บรอทำลาย** และ modal แสดงแค่จำนวน
 7. **แดชบอร์ด**: ตาม filter ช่วงเวลา (เหมือนหน้ารายงาน) + กรองรายการได้ · ยังไม่ต้องคลิกแล้วลิงก์ไปหน้าอื่น · สีกราฟ `#2a78d6 #eb6834 #1baf7a #eda100 #e87ba4`
-8. **แอดมิน**: หลายบัญชี, ไม่มีสมัครเอง, ค่าเริ่มต้น `admin` / `admin1234` ("วิธีการค่อยว่ากัน")
-   รหัสเป็น PBKDF2-SHA256 (WebCrypto ต้อง https หรือ localhost) หลุดเองเมื่อไม่ใช้ 15 นาที
-   **ข้อจำกัด:** ตรวจรหัสฝั่งเบราว์เซอร์ = แค่กันคนทั่วไป ไม่ใช่ความปลอดภัยจริง → ต้องย้ายไปฝั่งเซิร์ฟเวอร์ตอนต่อ DB
+8. **แอดมิน**: หลายบัญชี, ไม่มีสมัครเอง, **ไม่มีรหัสเริ่มต้น** — เปิดครั้งแรกหลังติดตั้งขึ้นหน้า "ตั้งค่าครั้งแรก: สร้างบัญชีแอดมิน"
+   (`03_first_admin.sql` ลบบัญชี admin/admin1234 ที่ 01 สร้างไว้ถ้ายังไม่เคยใช้)
+   รหัสเป็น PBKDF2-SHA256 ตรวจที่เซิร์ฟเวอร์ (เดิมใช้ WebCrypto ซึ่งใช้ไม่ได้บน http://<IP> ของเครื่องลูก) หลุดเองเมื่อไม่ใช้ 15 นาที
+   งานแอดมินทุกอย่างเซิร์ฟเวอร์ตรวจ cookie ก่อนบันทึก
 9. **แบรนด์**: บนซ้าย = โลโก้+ชื่อ รพ. (ยังเป็น mock "โรงพยาบาลตัวอย่าง"), ล่าง = "พัฒนาโดย" ห้างหุ้นส่วนจำกัด เอสพี เมดดิเทค (SP Meditech) · แอดมินเปลี่ยนได้ที่ ตั้งค่า (เก็บรูปเป็น data URL)
-10. **ฐานข้อมูล**: SQL Server ฐานใหม่ `SingleUseSticker` แยกจากของเดิม + login `singleuse_app` สิทธิ์เฉพาะฐานนี้
-    สคริปต์มีเลขเวอร์ชัน (`SchemaVersion`) **ห้ามแก้ไฟล์ที่รันแล้ว ให้เพิ่ม 03_, 04_...** · ตอนนี้ตรวจ syntax ด้วย sqlglot เท่านั้น ยังไม่เคยรันบน SQL Server จริง
+10. **ฐานข้อมูล**: SQL Server ที่มีอยู่แล้วบนเครื่องแม่ ฐานใหม่ `SingleUseSticker` แยกจากของเดิม + login `singleuse_app` สิทธิ์เฉพาะฐานนี้
+    (เจ้าของสั่ง: "อย่าไปยุ่งกับ db เก่าของหน้างาน") · โปรแกรมไม่ยอมต่อด้วย login sysadmin
+    IT รันแค่ `00_create_database.sql` ใน SSMS — `01_`, `02_`, ... โปรแกรมรันเองตอนเปิด (เทียบ `SchemaVersion` กับเลขหน้าชื่อไฟล์)
+    สคริปต์มีเลขเวอร์ชัน **ห้ามแก้ไฟล์ที่รันแล้ว ให้เพิ่ม 04_, 05_...** · ทดสอบบน SQL Server 2019 (Docker) แล้ว ทั้งติดตั้งใหม่และนำเข้าข้อมูล
+11. **สำรองข้อมูล**: โปรแกรมทำ `BACKUP DATABASE ... COPY_ONLY` วันละครั้ง ไฟล์ `SingleUseSticker_<วัน>.bak` 7 ไฟล์วน (ต้องมี `db_backupoperator` — อยู่ใน 00 แล้ว)
+12. **นำเข้าไฟล์สำรอง** (จากรุ่นเก็บในเบราว์เซอร์) ได้เฉพาะตอนฐานข้อมูลว่าง — กันทับข้อมูลจริง · ปุ่ม "โหลดข้อมูลตัวอย่าง" เอาออกแล้ว (จะทับข้อมูลจริง)
+13. **ชุดติดตั้ง**: แบบเดียวกับ med_dashboard (เจ้าของชี้ให้ใช้แบบนี้) — Next standalone + node.exe + .bat/.ps1 + Task Scheduler (SYSTEM) + firewall เฉพาะ localsubnet · port 3002 (med_dashboard ใช้ 3001)
 
 ---
 
 ## 6. ข้อควรระวังเวลาแก้โค้ด
 
-- เพิ่มฟิลด์ใน `PrintLog`/ข้อมูลใด ๆ → แก้ `types.ts` + `normalizeLog/normalizeData` ใน `storage.ts` (ให้ข้อมูลเก่าในเบราว์เซอร์ยังโหลดได้) + `demo.ts` + **เพิ่มสคริปต์ SQL ใหม่** + ตารางเทียบใน `database/README.md`
+- เพิ่มฟิลด์ใน `PrintLog`/ข้อมูลใด ๆ → แก้ `types.ts` + `normalizeLog/normalizeData` ใน `storage.ts` (ไฟล์สำรองเก่ายังนำเข้าได้)
+  + SELECT/INSERT ใน `src/server/repo.ts` (รวม `importData`) + **เพิ่มสคริปต์ SQL ใหม่ `0N_...sql`** (โปรแกรมรันเองตอนเปิด) + ตารางเทียบใน `database/README.md`
+- action ใหม่ → เพิ่มใน `repo.ts` + ตาราง `ACTIONS` ใน `src/app/api/action/route.ts` (กำหนด `admin: true` ถ้าเป็นงานแอดมิน) + `store.tsx`
+- ไฟล์ `.ps1` ต้องเป็น ASCII ล้วน (PowerShell 5.1) — `package-windows.sh` ตรวจให้
+- เครื่องผู้พัฒนาตั้ง git global ให้ข้าม `package-lock.json` — `package-windows.sh` copy ไฟล์นี้เข้าไปเองตอน build
 - เปลี่ยนหน้าตาสติ๊กเกอร์ → ทดสอบทุกแบบ: บาร์โคด/QR/ไม่มี × มี/ไม่มีหน่วยงาน × ปิดวันที่ × ชื่อยาว 2 บรรทัด และทดสอบพิมพ์จริงด้วยปุ่ม "พิมพ์ทดสอบ"
 - บาร์โคดตั้งให้แท่งเล็กสุด = 2 จุดหัวพิมพ์ (0.25 มม.) อย่าเปลี่ยนความกว้างแท่งโดยไม่ทดสอบสแกน
 - `src/lib/brand.ts` ต้องคงไว้เป็น re-export ของ `brand-context.tsx`
@@ -151,22 +185,29 @@ public/brand/               hospital-logo.svg (mock), company-logo.png (SP Medit
 
 ## 7. งานค้าง / ต้องตัดสินใจ
 
+**ยังไม่ได้ทดสอบบนเครื่องจริง**
+
+- [ ] ชุดติดตั้งบน Windows จริง: `.bat` / `.ps1` ดัดแปลงจาก med_dashboard (ที่ใช้งานได้แล้ว) แต่ยังไม่ได้รันบน Windows — ทดสอบ `app/server.js` จากชุดบน Mac + SQL Server 2019 (Docker) แล้ว
+- [ ] พิมพ์จริงกับ Godex ผ่านเครื่องลูก (http://<IP>) — ฟอนต์ตอนนี้ฝังในตัวแล้ว ควรเทียบหน้าตาสติ๊กเกอร์กับของเดิม
+
 **รอข้อมูลจากหน้างาน / ฝ่าย IT**
 
-- [ ] ชื่อเครื่องพิมพ์ใน Windows: `Pasin 2` หรือ `Pasin2` → แก้ `deploy/windows/1-set-printer-Pasin2.reg`
+- [ ] ชื่อเครื่องพิมพ์ใน Windows: `Pasin 2` หรือ `Pasin2` → แก้ `deploy/windows/client/1-set-printer-Pasin2.reg`
 - [ ] โลโก้และชื่อโรงพยาบาลจริง (อัปโหลดได้ที่เมนู ตั้งค่า หรือแทนไฟล์ `public/brand/hospital-logo.svg`)
 - [ ] เครื่องยิงที่หน้างานอ่าน QR ได้หรือไม่ (ถ้าไม่ได้ ควรใช้บาร์โคดเป็นหลัก)
-- [ ] ข้อมูลเซิร์ฟเวอร์: ชื่อ/IP SQL Server, พอร์ต, รุ่น SQL Server, เครื่องที่จะรันเว็บ (Windows Server/IIS? Node ได้ไหม)
-- [ ] วิธีจัดการบัญชีแอดมิน + เปลี่ยนรหัสเริ่มต้นก่อนใช้จริง
+- [ ] SQL Server ที่เครื่องแม่เปิด SQL login + TCP/IP หรือยัง (README-TH ขั้นที่ 2) · ใครถือรหัส sa สำหรับรัน 00
+- [ ] IP เครื่องแม่แบบคงที่ (ให้ IT ล็อก)
+- [ ] มีข้อมูลรุ่นทดลองในเบราว์เซอร์ที่ต้องย้ายมาไหม (นำเข้าได้เฉพาะตอนฐานว่าง)
 
 **งานพัฒนาต่อ (เสนอไว้ ยังไม่ได้รับอนุมัติ — ถามก่อนทำ)**
 
-- [ ] **ต่อ SQL Server จริง**: เขียน API (Next.js route handlers + `mssql`) → ทำ `DataStorage` แบบ API → สลับด้วย `.env` → ย้ายตรวจรหัสแอดมินไปฝั่งเซิร์ฟเวอร์ → ตัวย้ายข้อมูลจากไฟล์สำรอง JSON เข้า DB → คู่มือติดตั้งในโรงพยาบาล
-- [ ] ช่อง "ชื่อบนสติ๊กเกอร์ (ชื่อย่อ)" ในรายการอุปกรณ์ สำหรับชื่อยาวมาก (+ สคริปต์ `03_...sql`)
+- [ ] โหลดข้อมูลแบบเฉพาะส่วนที่เปลี่ยน — ตอนนี้เครื่องอื่นโหลดทั้งหมดใหม่ทุกครั้งที่มีการบันทึก (บีบอัดแล้ว ~20 KB / 800 ดวง) ถ้าประวัติเกินหลายหมื่นดวงควรทำ
+- [ ] ช่อง "ชื่อบนสติ๊กเกอร์ (ชื่อย่อ)" ในรายการอุปกรณ์ สำหรับชื่อยาวมาก (+ สคริปต์ `04_...sql`)
 - [ ] แดชบอร์ดแยกตามหน่วยงาน
 - [ ] เลือกหน่วยงานตอน "ลงทะเบียน + พิมพ์ทันที"
 - [ ] สิทธิ์แอดมินเพิ่ม (เช่น ทำลาย, ลงทะเบียน, ตั้งค่าเครื่องพิมพ์ เฉพาะแอดมิน)
 - [ ] จำเจ้าหน้าที่ที่เลือกไว้ (ตอนนี้ตั้งใจให้เลือกใหม่ทุกครั้ง)
+- [ ] โหมดสาธิตบน Vercel (ถ้ายังต้องใช้) — ต้องมีฐานข้อมูลออนไลน์ หรือทำโหมดเก็บในเบราว์เซอร์แยก
 
 ---
 
