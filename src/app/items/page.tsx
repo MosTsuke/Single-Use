@@ -50,7 +50,8 @@ const { Text } = Typography;
 export default function ItemsPage() {
   const { items, units, logs, allLogs, staff, departments, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
   const { message, modal } = App.useApp();
-  // โหมด demo (Vercel / ทดสอบ): มีนำเข้าไฟล์สำรอง + โหลดข้อมูลตัวอย่าง · หน้างาน (db) ไม่มี กันข้อมูลจริงถูกทับ
+  // การ์ดสำรอง / นำเข้าไฟล์สำรอง / โหลดข้อมูลตัวอย่าง มีเฉพาะโหมด demo (Vercel / ทดสอบ)
+  // หน้างาน (db) ไม่แสดง: สำรองฐานข้อมูลอัตโนมัติอยู่แล้ว และกันข้อมูลจริงถูกทับ
   const demo = useMode() === 'demo';
   const [form] = Form.useForm<ItemForm>();
   const [editing, setEditing] = useState<MasterItem | null>(null);
@@ -322,7 +323,7 @@ export default function ItemsPage() {
         />
       </Card>
 
-      {demo ? (
+      {demo && (
         <Card title="สำรอง / กู้คืนข้อมูล">
           <Flex justify="space-between" align="center" wrap gap={12}>
             <Text type="secondary" style={{ maxWidth: 560 }}>
@@ -340,18 +341,6 @@ export default function ItemsPage() {
                 โหลดข้อมูลตัวอย่าง
               </Button>
             </Space>
-          </Flex>
-        </Card>
-      ) : (
-        <Card title="ดาวน์โหลดข้อมูล">
-          <Flex justify="space-between" align="center" wrap gap={12}>
-            <Text type="secondary" style={{ maxWidth: 560 }}>
-              ข้อมูลเก็บในฐานข้อมูลที่เครื่องแม่ และสำรองอัตโนมัติวันละครั้ง
-              ปุ่มนี้ใช้ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ (เช่น ส่งให้ผู้พัฒนาตรวจสอบปัญหา)
-            </Text>
-            <Button icon={<CloudDownloadOutlined />} onClick={exportBackup}>
-              ดาวน์โหลดข้อมูล
-            </Button>
           </Flex>
         </Card>
       )}
