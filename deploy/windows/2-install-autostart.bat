@@ -16,7 +16,8 @@ if not exist "singleuse.env" (
   pause
   exit /b 1
 )
-findstr /C:"CHANGE_ME" "singleuse.env" >nul && (
+REM Only the DB_PASSWORD line counts (comments may mention the placeholder).
+findstr /R /C:"^DB_PASSWORD=.*CHANGE_ME" "singleuse.env" >nul && (
   echo [ยังไม่ได้ใส่รหัสผ่าน] แก้ DB_PASSWORD ในไฟล์ singleuse.env ก่อน
   pause
   exit /b 1

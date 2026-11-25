@@ -15,7 +15,8 @@ if not exist "singleuse.env" (
   echo [ยังไม่มีไฟล์ singleuse.env] ดับเบิลคลิก 1-start.bat ก่อน
   exit /b 2
 )
-findstr /C:"CHANGE_ME" "singleuse.env" >nul && (
+REM Only the DB_PASSWORD line counts (comments may mention the placeholder).
+findstr /R /C:"^DB_PASSWORD=.*CHANGE_ME" "singleuse.env" >nul && (
   echo [ยังไม่ได้ใส่รหัสผ่าน] แก้ DB_PASSWORD ในไฟล์ singleuse.env ก่อน
   exit /b 2
 )
