@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type { ActionResponse } from '@/lib/api-types';
-import { normalizeData } from '@/lib/storage';
 import { currentAdmin } from '@/server/auth';
 import { dbErrorMessage } from '@/server/db';
 import * as repo from '@/server/repo';
@@ -31,7 +30,6 @@ const ACTIONS: Record<string, { admin?: boolean; run: Run }> = {
   deleteStaff: { admin: true, run: (a, ad) => repo.deletePerson(ad!, 'staff', a.id) },
   saveDepartment: { admin: true, run: (a, ad) => repo.savePerson(ad!, 'departments', a.id ?? null, a.data) },
   deleteDepartment: { admin: true, run: (a, ad) => repo.deletePerson(ad!, 'departments', a.id) },
-  importData: { admin: true, run: (a, ad) => repo.importData(ad!, normalizeData(a.data ?? {})) },
 };
 
 const reply = <T,>(body: ActionResponse<T>, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });

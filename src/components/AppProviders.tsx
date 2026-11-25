@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import '@/lib/date'; // ตั้งค่า dayjs (ภาษาไทย + พ.ศ.)
 import { AuthProvider } from '@/lib/auth';
 import { BrandProvider } from '@/lib/brand';
+import { ModeProvider } from '@/lib/mode';
 import { PrintProvider } from '@/lib/print';
 import { StoreProvider } from '@/lib/store';
 
@@ -34,13 +35,16 @@ export default function AppProviders({ children }: { children: ReactNode }) {
       }}
     >
       <App>
-        <AuthProvider>
-          <BrandProvider>
-            <StoreProvider>
-              <PrintProvider>{children}</PrintProvider>
-            </StoreProvider>
-          </BrandProvider>
-        </AuthProvider>
+        {/* โหมด db (ต่อ SQL Server ที่หน้างาน) / demo (Vercel / ทดสอบ เก็บในเบราว์เซอร์) — ดู lib/mode.tsx */}
+        <ModeProvider>
+          <AuthProvider>
+            <BrandProvider>
+              <StoreProvider>
+                <PrintProvider>{children}</PrintProvider>
+              </StoreProvider>
+            </BrandProvider>
+          </AuthProvider>
+        </ModeProvider>
       </App>
     </ConfigProvider>
   );

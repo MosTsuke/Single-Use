@@ -1,36 +1,24 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getJSON, postJSON } from './api';
+import { AuthContext, IDLE_MINUTES, type AuthValue, type PublicAdmin, type Result } from './auth-core';
+import { LocalAuthProvider } from './auth-local';
+import { useMode } from './mode';
+
+export { IDLE_MINUTES, MIN_PASSWORD, USERNAME_PATTERN, type PublicAdmin } from './auth-core';
 
 /**
- * ระบบเข้าสู่ระบบของผู้ดูแล (แอดมิน)
+ * ระบบเข้าสู่ระบบของผู้ดูแล (แอดมิน) — โหมด db (หน้างาน)
+ * (โหมด demo ใช้ auth-local.tsx: บัญชี admin / admin1234 เก็บในเบราว์เซอร์ เหมือนรุ่นแรก)
  *
  * บัญชีเก็บในฐานข้อมูลที่เครื่องแม่ รหัสผ่านตรวจที่เซิร์ฟเวอร์ (PBKDF2-SHA256 + salt)
  * งานของแอดมิน (แก้รายการอุปกรณ์ เจ้าหน้าที่ ฯลฯ) เซิร์ฟเวอร์ตรวจสิทธิ์ทุกครั้ง
  * ไม่มีบัญชีเริ่มต้น — ตอนติดตั้งจะให้สร้างบัญชีแรกเอง
  */
 
-export interface PublicAdmin {
-  id: number;
-  /** ชื่อผู้ใช้สำหรับเข้าสู่ระบบ (ตัวเล็ก ไม่ซ้ำ) */
-  username: string;
-  /** ชื่อที่แสดง */
-  displayName: string;
-  active: boolean;
-  createdAt: string;
-  lastLoginAt?: string;
-}
-
-type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
-
 /** session ของแท็บนี้ — ปิดแท็บ/ไม่ใช้งานนาน = ออกจากระบบ */
 const KEY_SESSION = 'sticker_adminSession';
-
-/** ไม่ได้ใช้งานนานเท่านี้ → ออกจากระบบอัตโนมัติ */
-export const IDLE_MINUTES = 15;
-export const USERNAME_PATTERN = /^[a-z0-9._-]{3,30}$/;
-export const MIN_PASSWORD = 6;
 
 function readMarker(): number | null {
   try {
@@ -55,26 +43,6 @@ interface AuthState {
   admins: PublicAdmin[];
 }
 
-interface AuthValue {
-  ready: boolean;
-  /** ยังไม่มีบัญชีแอดมินเลย → ต้องสร้างบัญชีแรก (ตอนติดตั้ง) */
-  needsSetup: boolean;
-  admins: PublicAdmin[];
-  /** แอดมินที่เข้าสู่ระบบอยู่ (null = เจ้าหน้าที่ทั่วไป) */
-  current: PublicAdmin | null;
-  login: (username: string, password: string) => Promise<Result>;
-  logout: () => void;
-  /** สร้างบัญชีแอดมินแรก (ได้เฉพาะตอนยังไม่มีบัญชีเลย) แล้วเข้าสู่ระบบทันที */
-  setupFirstAdmin: (input: { username: string; displayName: string; password: string }) => Promise<Result>;
-  /** สร้างบัญชีเพิ่ม — ต้องเป็นแอดมินที่เข้าสู่ระบบอยู่ (ไม่มีการสมัครเอง) */
-  createAdmin: (input: { username: string; displayName: string; password: string }) => Promise<Result<PublicAdmin>>;
-  updateAdmin: (id: number, input: { displayName: string; active: boolean }) => Promise<Result>;
-  setPassword: (id: number, password: string) => Promise<Result>;
-  deleteAdmin: (id: number) => Promise<Result>;
-}
-
-const AuthContext = createContext<AuthValue | null>(null);
-
 const asResult = async <T,>(p: Promise<Result<T>>): Promise<Result<T>> => {
   try {
     return await p;
@@ -84,6 +52,10 @@ const asResult = async <T,>(p: Promise<Result<T>>): Promise<Result<T>> => {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  return useMode() === 'demo' ? <LocalAuthProvider>{children}</LocalAuthProvider> : <DbAuthProvider>{children}</DbAuthProvider>;
+}
+
+function DbAuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AuthState>({ needsSetup: false, current: null, admins: [] });
 

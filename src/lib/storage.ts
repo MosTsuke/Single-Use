@@ -1,9 +1,36 @@
 import type { AppData, Department, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
- * แปลงข้อมูล (จากไฟล์สำรอง / ฐานข้อมูล) ให้เข้ากับโครงสร้างปัจจุบัน
- * ข้อมูลจริงเก็บใน SQL Server ที่เครื่องแม่ — ดู src/server/ และ src/lib/store.tsx
+ * เก็บข้อมูลใน localStorage ของเบราว์เซอร์ — ใช้เฉพาะโหมด demo (Vercel / ทดสอบ ไม่ได้ต่อฐานข้อมูล)
+ * โหมด db (หน้างาน) เก็บใน SQL Server ผ่าน /api (ดู store.tsx, src/server/)
+ * normalizeLog / cleanPrefix ใช้ทั้งสองโหมด (ฝั่งเซิร์ฟเวอร์ใช้แปลงแถวจากฐานข้อมูลด้วย)
  */
+export interface DataStorage {
+  load(): Promise<AppData>;
+  save(data: AppData): Promise<void>;
+}
+
+const KEY_ITEMS = 'sticker_masterItems';
+const KEY_UNITS = 'sticker_units';
+const KEY_LOGS = 'sticker_printLogs';
+const KEY_STAFF = 'sticker_staff';
+const KEY_DEPTS = 'sticker_departments';
+
+/** ตัวอย่างรายการอุปกรณ์ตอนเปิดโหมด demo ครั้งแรก (ไม่มีในโหมด db) */
+export const DEFAULT_ITEMS: MasterItem[] = [
+  { id: 1, name: 'สาย Suction', shelf: 61, maxRound: 4, useBarcode: true, snPrefix: 'SUC' },
+  { id: 2, name: 'Set B (ชุดอุปกรณ์เสริม)', shelf: 30, maxRound: 2, useBarcode: false, snPrefix: 'SETB' },
+  { id: 3, name: 'Set C (ชุดผ่าตัดเล็ก)', shelf: 3, maxRound: 5, useBarcode: true, snPrefix: 'SETC' },
+];
+
+function readJSON<T>(key: string): T | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
 
 export const cleanPrefix = (p: unknown) =>
   String(p ?? '')
@@ -57,7 +84,7 @@ export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: un
         useBarcode: !!i.useBarcode,
         snPrefix: cleanPrefix(i.snPrefix) || `T${i.id}`,
       }))
-    : [];
+    : DEFAULT_ITEMS;
   const units: Unit[] = Array.isArray(raw.units)
     ? (raw.units as Unit[]).map((u) => ({
         id: Number(u.id),
@@ -95,3 +122,25 @@ export function normalizeData(raw: { items?: unknown; units?: unknown; logs?: un
     : [];
   return { items, units, logs, staff, departments };
 }
+
+class LocalStorageDataStorage implements DataStorage {
+  async load(): Promise<AppData> {
+    return normalizeData({
+      items: readJSON<MasterItem[]>(KEY_ITEMS) ?? undefined,
+      units: readJSON<Unit[]>(KEY_UNITS) ?? [],
+      logs: readJSON<PrintLog[]>(KEY_LOGS) ?? [],
+      staff: readJSON<Staff[]>(KEY_STAFF) ?? [],
+      departments: readJSON<Department[]>(KEY_DEPTS) ?? [],
+    });
+  }
+
+  async save(data: AppData): Promise<void> {
+    window.localStorage.setItem(KEY_ITEMS, JSON.stringify(data.items));
+    window.localStorage.setItem(KEY_UNITS, JSON.stringify(data.units));
+    window.localStorage.setItem(KEY_LOGS, JSON.stringify(data.logs));
+    window.localStorage.setItem(KEY_STAFF, JSON.stringify(data.staff));
+    window.localStorage.setItem(KEY_DEPTS, JSON.stringify(data.departments));
+  }
+}
+
+export const storage: DataStorage = new LocalStorageDataStorage();

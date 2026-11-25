@@ -20,11 +20,13 @@ import {
 import { Alert, Button, Flex, Grid, Layout, Menu, Result, Spin, Tag, Tooltip, Typography } from 'antd';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AdminGateCard, AdminLoginModal, FirstAdminSetupCard } from '@/components/AdminLogin';
+import { AdminGateCard, AdminLoginModal } from '@/components/AdminLogin';
+import FirstRunSetup from '@/components/FirstRunSetup';
 import { IDLE_MINUTES, useAuth } from '@/lib/auth';
 import { useBrand } from '@/lib/brand';
 import { useEffect, useState, type ReactNode } from 'react';
 import { dayjs } from '@/lib/date';
+import { useMode } from '@/lib/mode';
 import { useStore } from '@/lib/store';
 
 const { Sider, Header, Content } = Layout;
@@ -52,8 +54,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const isMobile = !screens.lg;
   const [collapsed, setCollapsed] = useState(false);
   const { ready, saveError, reload } = useStore();
+  const demo = useMode() === 'demo';
   const auth = useAuth();
-  const { brand: BRAND } = useBrand();
+  const { brand: BRAND, ready: brandReady, hospitalSet } = useBrand();
   const router = useRouter();
   const [loginOpen, setLoginOpen] = useState(false);
   const isAdmin = !!auth.current;
@@ -222,7 +225,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               type="error"
               showIcon
               style={{ marginBottom: 16 }}
-              title="เชื่อมต่อฐานข้อมูลที่เครื่องแม่ไม่ได้ — ข้อมูลบนหน้าจออาจไม่ล่าสุด และยังบันทึกไม่ได้"
+              title={demo ? 'บันทึกข้อมูลไม่สำเร็จ' : 'เชื่อมต่อฐานข้อมูลที่เครื่องแม่ไม่ได้ — ข้อมูลบนหน้าจออาจไม่ล่าสุด และยังบันทึกไม่ได้'}
               description={saveError}
             />
           )}
@@ -237,9 +240,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </Button>
               }
             />
-          ) : ready && auth.ready ? (
-            auth.needsSetup ? (
-              <FirstAdminSetupCard />
+          ) : ready && auth.ready && brandReady ? (
+            // ตั้งค่าครั้งแรก: บัญชีแอดมิน + โลโก้/ชื่อโรงพยาบาล ต้องครบก่อนใช้งาน
+            auth.needsSetup || !hospitalSet ? (
+              <FirstRunSetup />
             ) : adminPage && !isAdmin ? (
               <AdminGateCard />
             ) : (

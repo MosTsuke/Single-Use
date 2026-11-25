@@ -6,6 +6,7 @@ import {
   CloudUploadOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExperimentOutlined,
   PlusOutlined,
   SearchOutlined,
   StopOutlined,
@@ -36,6 +37,8 @@ import { useMemo, useState } from 'react';
 import { todayISO } from '@/lib/date';
 import Link from 'next/link';
 import ItemUnitsPanel from '@/components/ItemUnitsPanel';
+import { buildDemoData } from '@/lib/demo';
+import { useMode } from '@/lib/mode';
 import { cleanPrefix, normalizeData } from '@/lib/storage';
 import { useStore } from '@/lib/store';
 import type { MasterItem } from '@/lib/types';
@@ -44,8 +47,10 @@ type ItemForm = Omit<MasterItem, 'id'>;
 const { Text } = Typography;
 
 export default function ItemsPage() {
-  const { items, units, logs, allLogs, staff, departments, getUnitInfo, addItem, updateItem, deleteItem, importData } = useStore();
+  const { items, units, logs, allLogs, staff, departments, getUnitInfo, addItem, updateItem, deleteItem, replaceAll } = useStore();
   const { message, modal } = App.useApp();
+  // โหมด demo (Vercel / ทดสอบ): มีนำเข้าไฟล์สำรอง + โหลดข้อมูลตัวอย่าง · หน้างาน (db) ไม่มี กันข้อมูลจริงถูกทับ
+  const demo = useMode() === 'demo';
   const [form] = Form.useForm<ItemForm>();
   const [editing, setEditing] = useState<MasterItem | null>(null);
   const [open, setOpen] = useState(false);
@@ -109,6 +114,7 @@ export default function ItemsPage() {
     URL.revokeObjectURL(a.href);
   };
 
+  /** โหมด demo เท่านั้น — แทนที่ข้อมูลในเบราว์เซอร์นี้ทั้งหมด */
   const importBackup = (file: File) => {
     file
       .text()
@@ -118,26 +124,37 @@ export default function ItemsPage() {
         const data = normalizeData(raw);
         modal.confirm({
           title: 'นำเข้าข้อมูลสำรอง',
-          content: `พบ ${data.items.length} รายการ, อุปกรณ์ ${data.units.length} ชิ้น, ประวัติการพิมพ์ ${data.logs.length} ดวง, เจ้าหน้าที่ ${data.staff.length} คน และหน่วยงาน ${data.departments.length} หน่วย — นำเข้าได้เฉพาะตอนฐานข้อมูลยังว่าง (เพิ่งติดตั้ง) ใช้ย้ายข้อมูลจากโปรแกรมรุ่นที่เก็บข้อมูลในเบราว์เซอร์`,
-          okText: 'นำเข้า',
+          content: `พบ ${data.items.length} รายการ, อุปกรณ์ ${data.units.length} ชิ้น , ประวัติการพิมพ์ ${data.logs.length} ดวง และเจ้าหน้าที่ ${data.staff.length} คน — ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด`,
+          okText: 'นำเข้าและแทนที่',
+          okButtonProps: { danger: true },
           cancelText: 'ยกเลิก',
-          onOk: async () => {
-            const res = await importData(data);
-            if (!res.ok) {
-              message.error(res.error, 8);
-              return;
-            }
-            message.success(
-              res.value.skipped
-                ? `นำเข้าข้อมูลเรียบร้อย (ข้ามประวัติรุ่นเก่าที่ไม่มี SN ${res.value.skipped} ดวง)`
-                : 'นำเข้าข้อมูลเรียบร้อย',
-            );
+          onOk: () => {
+            replaceAll?.(data);
+            message.success('นำเข้าข้อมูลเรียบร้อย');
           },
         });
       })
       .catch((e: Error) => message.error(`นำเข้าไม่สำเร็จ: ${e.message}`));
     return false;
   };
+
+  /** โหมด demo เท่านั้น */
+  const loadDemo = () => {
+    modal.confirm({
+      title: 'โหลดข้อมูลตัวอย่าง',
+      icon: <ExperimentOutlined style={{ color: '#7c3aed' }} />,
+      content:
+        'จำลองอุปกรณ์ 6 รายการ พร้อมประวัติ sterilize ย้อนหลังประมาณ 5 เดือน ข้อมูลปัจจุบันในเครื่องนี้จะถูกแทนที่ทั้งหมด (กดสำรองข้อมูลก่อนได้)',
+      okText: 'โหลดข้อมูลตัวอย่าง',
+      cancelText: 'ยกเลิก',
+      onOk: () => {
+        const d = buildDemoData();
+        replaceAll?.(d);
+        message.success(`โหลดตัวอย่างแล้ว: ${d.units.length} ชิ้น, ประวัติ ${d.logs.length} ดวง`);
+      },
+    });
+  };
+
 
   const columns: ColumnsType<MasterItem> = [
     {
@@ -303,22 +320,39 @@ export default function ItemsPage() {
         />
       </Card>
 
-      <Card title="สำรอง / กู้คืนข้อมูล">
-        <Flex justify="space-between" align="center" wrap gap={12}>
-          <Text type="secondary" style={{ maxWidth: 560 }}>
-            ข้อมูลเก็บในฐานข้อมูลที่เครื่องแม่ และสำรองอัตโนมัติวันละครั้ง
-            ปุ่มนี้ใช้ดาวน์โหลดข้อมูลเป็นไฟล์ หรือนำเข้าข้อมูลจากโปรแกรมรุ่นก่อนตอนเพิ่งติดตั้ง
-          </Text>
-          <Space wrap>
+      {demo ? (
+        <Card title="สำรอง / กู้คืนข้อมูล">
+          <Flex justify="space-between" align="center" wrap gap={12}>
+            <Text type="secondary" style={{ maxWidth: 560 }}>
+              โหมดทดสอบ: ข้อมูลทั้งหมดเก็บอยู่ในเบราว์เซอร์ของเครื่องนี้ ควรสำรองเป็นไฟล์ไว้เป็นระยะ
+              หรือใช้ย้ายข้อมูลไปเครื่องอื่น
+            </Text>
+            <Space wrap>
+              <Button icon={<CloudDownloadOutlined />} onClick={exportBackup}>
+                สำรองข้อมูล
+              </Button>
+              <Upload accept=".json,application/json" showUploadList={false} beforeUpload={importBackup}>
+                <Button icon={<CloudUploadOutlined />}>นำเข้าข้อมูล</Button>
+              </Upload>
+              <Button icon={<ExperimentOutlined />} onClick={loadDemo} style={{ color: '#7c3aed', borderColor: '#c4b5fd' }}>
+                โหลดข้อมูลตัวอย่าง
+              </Button>
+            </Space>
+          </Flex>
+        </Card>
+      ) : (
+        <Card title="ดาวน์โหลดข้อมูล">
+          <Flex justify="space-between" align="center" wrap gap={12}>
+            <Text type="secondary" style={{ maxWidth: 560 }}>
+              ข้อมูลเก็บในฐานข้อมูลที่เครื่องแม่ และสำรองอัตโนมัติวันละครั้ง
+              ปุ่มนี้ใช้ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ (เช่น ส่งให้ผู้พัฒนาตรวจสอบปัญหา)
+            </Text>
             <Button icon={<CloudDownloadOutlined />} onClick={exportBackup}>
-              สำรองข้อมูล
+              ดาวน์โหลดข้อมูล
             </Button>
-            <Upload accept=".json,application/json" showUploadList={false} beforeUpload={importBackup}>
-              <Button icon={<CloudUploadOutlined />}>นำเข้าข้อมูล</Button>
-            </Upload>
-          </Space>
-        </Flex>
-      </Card>
+          </Flex>
+        </Card>
+      )}
 
       <Modal
         open={open}

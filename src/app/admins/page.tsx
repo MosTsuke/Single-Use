@@ -6,6 +6,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { thaiDateTime } from '@/lib/date';
 import { MIN_PASSWORD, USERNAME_PATTERN, useAuth, type PublicAdmin } from '@/lib/auth';
+import { useMode } from '@/lib/mode';
 
 const { Text } = Typography;
 
@@ -29,6 +30,7 @@ const confirmRule = ({ getFieldValue }: { getFieldValue: (n: string) => unknown 
 /** จัดการบัญชีแอดมิน (เฉพาะแอดมิน — AppShell กันไว้แล้ว) */
 export default function AdminsPage() {
   const { admins, current, createAdmin, updateAdmin, setPassword, deleteAdmin } = useAuth();
+  const demo = useMode() === 'demo';
   const { message } = App.useApp();
   const [form] = Form.useForm<AccountForm>();
   const [pwForm] = Form.useForm<{ password: string; confirm: string }>();
@@ -175,7 +177,11 @@ export default function AdminsPage() {
           showIcon
           style={{ marginBottom: 16 }}
           title="แอดมินเข้าหน้ารายการอุปกรณ์ / รายชื่อเจ้าหน้าที่ / บัญชีแอดมินได้ · เจ้าหน้าที่ทั่วไปพิมพ์สติ๊กเกอร์ได้โดยไม่ต้องเข้าสู่ระบบ"
-          description="บัญชีเก็บในฐานข้อมูลที่เครื่องแม่ ใช้ได้ทุกเครื่อง รหัสผ่านตรวจที่เครื่องแม่ · ออกจากระบบเองเมื่อไม่ใช้งาน 15 นาที หรือปิดหน้าต่าง"
+          description={
+            demo
+              ? 'โหมดทดสอบ: บัญชีเก็บอยู่ในเบราว์เซอร์ของเครื่องนี้ (ไม่รวมในไฟล์สำรองข้อมูล) — ถ้าใช้หลายเครื่องต้องสร้างบัญชีแยกแต่ละเครื่อง ระบบนี้กันคนทั่วไปเข้าหน้าตั้งค่า แต่ยังไม่ใช่ความปลอดภัยระดับเซิร์ฟเวอร์'
+              : 'บัญชีเก็บในฐานข้อมูลที่เครื่องแม่ ใช้ได้ทุกเครื่อง รหัสผ่านตรวจที่เครื่องแม่ · ออกจากระบบเองเมื่อไม่ใช้งาน 15 นาที หรือปิดหน้าต่าง'
+          }
         />
         <Table rowKey="id" columns={columns} dataSource={admins} scroll={{ x: 800 }} pagination={false} />
       </Card>

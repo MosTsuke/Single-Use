@@ -1,123 +1,27 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { callAction, getAppData, getJSON } from './api';
 import type { Patch } from './api-types';
-import type { AppData, CodeType, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit, UnitStatus } from './types';
-import { cyclesUsed, generateSns, normSn, unitStatus } from './units';
+import { useMode } from './mode';
+import { buildInfo, findVoidable, StoreContext, type StoreValue } from './store-core';
+import { LocalStoreProvider } from './store-local';
+import type { AppData, CodeType, Department, DisposeReason, MasterItem, PrintLog, Staff, Unit } from './types';
+import { cyclesUsed, generateSns, normSn } from './units';
+
+export type { Result, StoreValue, UnitInfo } from './store-core';
 
 /**
- * ข้อมูลกลางของโปรแกรม — เก็บใน SQL Server ที่เครื่องแม่ (ผ่าน /api/...)
+ * ข้อมูลกลางของโปรแกรม — โหมด db: เก็บใน SQL Server ที่เครื่องแม่ (ผ่าน /api/...)
+ * (โหมด demo ใช้ store-local.tsx เก็บในเบราว์เซอร์ — เลือกให้เองใน StoreProvider ด้านล่าง)
  *
  * - เปิดหน้าเว็บ: โหลดข้อมูลทั้งหมดครั้งเดียว แล้วคำนวณสถานะ/รายงานในเครื่อง (เหมือนเดิม)
  * - บันทึก: ส่งไปให้เซิร์ฟเวอร์ตรวจและบันทึกใน transaction แล้วนำส่วนที่เปลี่ยนมาใส่ในข้อมูลที่โหลดไว้
  * - หลายเครื่องใช้พร้อมกัน: ทุก 4 วินาทีถามเลขรุ่นของข้อมูล ถ้าเครื่องอื่นบันทึกอะไรไป จะโหลดใหม่ให้เอง
  */
 
-export interface UnitInfo {
-  unit: Unit;
-  item?: MasterItem;
-  used: number;
-  status: UnitStatus;
-  /** รอบที่จะพิมพ์ครั้งถัดไป (null = พิมพ์ไม่ได้) */
-  nextRound: number | null;
-  lastLog?: PrintLog;
-}
-
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
-
-interface StoreValue {
-  ready: boolean;
-  items: MasterItem[];
-  units: Unit[];
-  /** ประวัติการพิมพ์ที่มีผล (ไม่รวมดวงที่ถูกยกเลิก) — ใช้นับรอบ รายงาน แดชบอร์ด */
-  logs: PrintLog[];
-  /** ประวัติการพิมพ์ทั้งหมด รวมดวงที่ถูกยกเลิก — ใช้แสดงประวัติ / สำรองข้อมูล */
-  allLogs: PrintLog[];
-  staff: Staff[];
-  departments: Department[];
-  /** เชื่อมต่อเครื่องแม่/ฐานข้อมูลไม่ได้ (null = ปกติ) */
-  saveError: string | null;
-  /** โหลดข้อมูลทั้งหมดใหม่จากเครื่องแม่ */
-  reload: () => Promise<void>;
-
-  getUnitInfo: (unit: Unit) => UnitInfo;
-  findUnitBySn: (sn: string) => Unit | undefined;
-  suggestSns: (itemId: number, count: number) => string[];
-
-  addItem: (data: Omit<MasterItem, 'id'>) => Promise<Result<MasterItem>>;
-  updateItem: (id: number, data: Omit<MasterItem, 'id'>) => Promise<Result<MasterItem>>;
-  deleteItem: (id: number) => Promise<Result<void>>;
-
-  addStaff: (data: Omit<Staff, 'id'>) => Promise<Result<Staff>>;
-  updateStaff: (id: number, data: Omit<Staff, 'id'>) => Promise<Result<Staff>>;
-  /** ลบได้เฉพาะคนที่ยังไม่เคยพิมพ์ — ถ้าเคยพิมพ์แล้วให้ปิดใช้งานแทน */
-  deleteStaff: (id: number) => Promise<Result<void>>;
-
-  addDepartment: (data: Omit<Department, 'id'>) => Promise<Result<Department>>;
-  updateDepartment: (id: number, data: Omit<Department, 'id'>) => Promise<Result<Department>>;
-  /** ลบได้เฉพาะหน่วยงานที่ยังไม่เคยถูกใช้ในการพิมพ์ — ถ้าเคยใช้แล้วให้ปิดใช้งานแทน */
-  deleteDepartment: (id: number) => Promise<Result<void>>;
-
-  registerUnits: (input: { itemId: number; sns: string[]; manufacturerSn: boolean; replacesSn?: string }) => Promise<Result<Unit[]>>;
-  disposeUnit: (unitId: number, reason: DisposeReason, note?: string) => Promise<Result<Unit>>;
-  /**
-   * sterilize เสร็จ → บันทึกรอบใหม่และคืนข้อมูลสำหรับพิมพ์
-   * opts.round = พิมพ์ข้ามไปรอบที่ระบุ (ต้อง ≥ รอบถัดไป และ ≤ รอบสูงสุด) ต้องมี opts.note
-   * staffId = เจ้าหน้าที่ผู้พิมพ์ (บังคับ)
-   */
-  sterilize: (
-    unitId: number,
-    mfg: string,
-    exp: string,
-    opts: {
-      staffId: number;
-      round?: number;
-      note?: string;
-      showMfg?: boolean;
-      showExp?: boolean;
-      codeType?: CodeType;
-      /** หน่วยงานที่นำไปใช้ (ไม่บังคับ) */
-      departmentId?: number;
-      showDept?: boolean;
-    },
-  ) => Promise<Result<PrintLog>>;
-  /** พิมพ์ซ้ำดวงเดิม — override.codeType ใช้กับดวงนี้ดวงเดียว */
-  createReprint: (logId: number, override?: { codeType?: CodeType }) => Promise<Result<PrintLog>>;
-  /** นำเข้าข้อมูลจากไฟล์สำรอง (ได้เฉพาะตอนฐานข้อมูลยังว่าง) */
-  importData: (data: AppData) => Promise<Result<{ skipped: number }>>;
-  /** ย้อนการพิมพ์ (กรณีกดยกเลิกในหน้าต่างพิมพ์) — ลบได้เฉพาะดวงล่าสุดของชิ้นนั้น */
-  removeLogs: (ids: number[]) => Promise<Result<void>>;
-  /** ยกเลิกใบที่พิมพ์ผิด (เฉพาะดวงล่าสุดของชิ้นนั้น) — คืนรอบเดิม และบันทึกการยกเลิกในประวัติ */
-  voidPrint: (logId: number, input: { reason: string; staffId: number }) => Promise<Result<PrintLog>>;
-  /** ดวงล่าสุดของชิ้นที่ยกเลิกได้ (ไม่มี = ยกเลิกไม่ได้) */
-  voidableLog: (unit: Unit) => PrintLog | undefined;
-}
-
-const StoreContext = createContext<StoreValue | null>(null);
-
 const EMPTY: AppData = { items: [], units: [], logs: [], staff: [], departments: [] };
 const POLL_MS = 4000;
-
-function buildInfo(d: AppData, unit: Unit): UnitInfo {
-  const used = cyclesUsed(d.logs, unit.id);
-  const status = unitStatus(unit, used);
-  let lastLog: PrintLog | undefined;
-  for (let i = d.logs.length - 1; i >= 0; i--) {
-    if (d.logs[i].unitId === unit.id && !d.logs[i].voidedAt) {
-      lastLog = d.logs[i];
-      break;
-    }
-  }
-  return {
-    unit,
-    item: d.items.find((i) => i.id === unit.itemId),
-    used,
-    status,
-    nextRound: status === 'new' || status === 'active' ? used + 1 : null,
-    lastLog,
-  };
-}
 
 /** ใส่แถวที่เปลี่ยน/เพิ่ม และเอาแถวที่ถูกลบออก (เรียงตาม id เสมอ) */
 function merge<T extends { id: number }>(list: T[], rows?: T[], removed?: number[]): T[] {
@@ -139,7 +43,12 @@ const applyPatch = (d: AppData, p: Patch): AppData => ({
   departments: merge(d.departments, p.departments, p.removed?.departments),
 });
 
+/** เลือกที่เก็บข้อมูลตามโหมด: ต่อ SQL Server (หน้างาน) / เก็บในเบราว์เซอร์ (ทดสอบ) */
 export function StoreProvider({ children }: { children: ReactNode }) {
+  return useMode() === 'demo' ? <LocalStoreProvider>{children}</LocalStoreProvider> : <DbStoreProvider>{children}</DbStoreProvider>;
+}
+
+function DbStoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -196,7 +105,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** ส่งงานให้เซิร์ฟเวอร์ แล้วอัปเดตข้อมูลในเครื่องตามผล */
   const run = useCallback(
-    async <T,>(name: string, args: unknown): Promise<Result<T>> => {
+    async <T,>(name: string, args: unknown): Promise<{ ok: true; value: T } | { ok: false; error: string }> => {
       const before = versionRef.current;
       const res = await callAction<T>(name, args);
       if (!res.ok) {
@@ -206,16 +115,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: res.error };
       }
       setSaveError(null);
-      if (res.patch.reload) {
-        await reload();
-      } else {
-        const next = applyPatch(ref.current, res.patch);
-        ref.current = next;
-        setData(next);
-        // ระหว่างนี้เครื่องอื่นบันทึกอะไรไปด้วย → โหลดใหม่ทั้งหมด
-        if (before != null && res.version === before + 1) versionRef.current = res.version;
-        else void reload();
-      }
+      const next = applyPatch(ref.current, res.patch);
+      ref.current = next;
+      setData(next);
+      // ระหว่างนี้เครื่องอื่นบันทึกอะไรไปด้วย → โหลดใหม่ทั้งหมด
+      if (before != null && res.version === before + 1) versionRef.current = res.version;
+      else void reload();
       return { ok: true, value: res.value };
     },
     [reload],
@@ -238,12 +143,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data],
   );
 
-  const findVoidable = (d: AppData, unit: Unit): PrintLog | undefined => {
-    if (unit.disposedAt) return undefined;
-    let last: PrintLog | undefined;
-    for (const l of d.logs) if (l.unitId === unit.id && !l.isReprint && !l.voidedAt && (!last || l.id > last.id)) last = l;
-    return last;
-  };
   const voidableLog = useCallback((unit: Unit) => findVoidable(data, unit), [data]);
 
   const actions = useMemo(
@@ -263,7 +162,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // รอบที่ใช้ไปตามที่หน้าจอนี้เห็น — เซิร์ฟเวอร์ปฏิเสธถ้าเครื่องอื่นพิมพ์ชิ้นนี้ไปก่อน
         run<PrintLog>('sterilize', { unitId, mfg, exp, ...opts, expectedUsed: cyclesUsed(ref.current.logs, unitId) }),
       createReprint: (logId: number, override?: { codeType?: CodeType }) => run<PrintLog>('createReprint', { logId, codeType: override?.codeType }),
-      importData: (d: AppData) => run<{ skipped: number }>('importData', { data: d }),
       removeLogs: (ids: number[]) => run<void>('removeLogs', { ids }),
       voidPrint: (logId: number, input: { reason: string; staffId: number }) => run<PrintLog>('voidPrint', { logId, ...input }),
     }),

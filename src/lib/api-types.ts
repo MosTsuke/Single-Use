@@ -2,7 +2,6 @@ import type { Department, MasterItem, PrintLog, Staff, Unit } from './types';
 
 /**
  * ส่วนที่เปลี่ยนหลังทำ action หนึ่ง — หน้าเว็บนำไปใส่ในข้อมูลที่โหลดไว้ (ไม่ต้องโหลดทั้งหมดใหม่)
- * reload = ให้โหลดข้อมูลทั้งหมดใหม่ (เช่น หลังนำเข้าข้อมูล)
  */
 export interface Patch {
   items?: MasterItem[];
@@ -11,7 +10,6 @@ export interface Patch {
   staff?: Staff[];
   departments?: Department[];
   removed?: { items?: number[]; logs?: number[]; staff?: number[]; departments?: number[] };
-  reload?: boolean;
 }
 
 /**

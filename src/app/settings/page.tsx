@@ -4,6 +4,7 @@ import { PictureOutlined, SaveOutlined, UndoOutlined, UploadOutlined } from '@an
 import { Alert, App, Button, Card, Col, Flex, Form, Input, Row, Space, Tag, Typography, Upload } from 'antd';
 import { useEffect, useState } from 'react';
 import { DEFAULT_BRAND, imageFileToDataUrl, useBrand, type Brand } from '@/lib/brand';
+import { useMode } from '@/lib/mode';
 
 const { Text } = Typography;
 const SIDEBAR_BG = '#0f172a';
@@ -14,6 +15,8 @@ type NameValues = Pick<Brand, 'hospitalName' | 'appName' | 'companyName'>;
 /** ตั้งค่าระบบ (แอดมิน) — ตอนนี้มีโลโก้และชื่อที่แสดงในแถบเมนู */
 export default function SettingsPage() {
   const { brand, custom, update, reset } = useBrand();
+  // หน้างาน (db): โลโก้/ชื่อโรงพยาบาลต้องเป็นของจริงเสมอ · โหมดทดสอบ (demo): กลับไปใช้ค่าตัวอย่างได้เหมือนเดิม
+  const demo = useMode() === 'demo';
   const { message } = App.useApp();
   const [form] = Form.useForm<NameValues>();
   const [busy, setBusy] = useState<LogoKey | null>(null);
@@ -44,7 +47,8 @@ export default function SettingsPage() {
     const patch: Partial<Brand> = {};
     (Object.keys(v) as (keyof NameValues)[]).forEach((k) => {
       const val = (v[k] ?? '').trim();
-      patch[k] = !val || val === DEFAULT_BRAND[k] ? undefined : val;
+      // หน้างาน: ชื่อโรงพยาบาลเก็บเสมอ (ค่าเริ่มต้นในโปรแกรมเป็นตัวอย่าง)
+      patch[k] = k === 'hospitalName' && !demo ? val : !val || val === DEFAULT_BRAND[k] ? undefined : val;
     });
     try {
       await update(patch);
@@ -56,13 +60,15 @@ export default function SettingsPage() {
 
   const logoCard = (key: LogoKey, title: string, hint: string, previewBox: { w: number; h: number; white?: boolean }) => {
     const isCustom = !!custom[key];
+    // โลโก้โรงพยาบาลต้องเป็นของจริงเสมอ — เปลี่ยนรูปได้ แต่ไม่กลับไปใช้รูปตัวอย่าง
+    const canReset = demo || key !== 'hospitalLogo';
     return (
       <Card
         title={
           <Space>
             <PictureOutlined style={{ color: '#2563eb' }} />
             {title}
-            {isCustom ? <Tag color="blue">ตั้งเอง</Tag> : <Tag>ค่าเริ่มต้น</Tag>}
+            {canReset && (isCustom ? <Tag color="blue">ตั้งเอง</Tag> : <Tag>ค่าเริ่มต้น</Tag>)}
           </Space>
         }
         style={{ height: '100%' }}
@@ -91,9 +97,11 @@ export default function SettingsPage() {
               เลือกรูปใหม่
             </Button>
           </Upload>
-          <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => reset([key]).then(() => message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'), (e: Error) => message.error(e.message))}>
-            ใช้ค่าเริ่มต้น
-          </Button>
+          {canReset && (
+            <Button icon={<UndoOutlined />} disabled={!isCustom} onClick={() => reset([key]).then(() => message.success('กลับไปใช้โลโก้เริ่มต้นแล้ว'), (e: Error) => message.error(e.message))}>
+              ใช้ค่าเริ่มต้น
+            </Button>
+          )}
         </Space>
       </Card>
     );
@@ -105,7 +113,11 @@ export default function SettingsPage() {
         type="info"
         showIcon
         title="โลโก้และชื่อที่แสดงในแถบเมนูด้านซ้าย"
-        description="ค่าที่ตั้งเก็บในฐานข้อมูลที่เครื่องแม่ ทุกเครื่องที่เปิดโปรแกรมเห็นเหมือนกัน (เครื่องอื่นเห็นหลังเปิดหน้าใหม่)"
+        description={
+          demo
+            ? 'โหมดทดสอบ: ค่าที่ตั้งจะเก็บในเบราว์เซอร์ของเครื่องนี้ — ถ้าใช้หลายเครื่องต้องตั้งแต่ละเครื่อง'
+            : 'ค่าที่ตั้งเก็บในฐานข้อมูลที่เครื่องแม่ ทุกเครื่องที่เปิดโปรแกรมเห็นเหมือนกัน (เครื่องอื่นเห็นหลังเปิดหน้าใหม่)'
+        }
       />
       <Row gutter={[20, 20]}>
         <Col xs={24} lg={12}>
@@ -126,7 +138,7 @@ export default function SettingsPage() {
       <Card title="ชื่อที่แสดง">
         <Form<NameValues> form={form} layout="vertical" requiredMark={false} style={{ maxWidth: 560 }}>
           <Form.Item name="hospitalName" label="ชื่อโรงพยาบาล" rules={[{ required: true, whitespace: true, message: 'กรุณากรอกชื่อโรงพยาบาล' }]}>
-            <Input maxLength={60} placeholder={DEFAULT_BRAND.hospitalName} />
+            <Input maxLength={60} placeholder={demo ? DEFAULT_BRAND.hospitalName : undefined} />
           </Form.Item>
           <Form.Item name="appName" label="บรรทัดรองใต้ชื่อโรงพยาบาล">
             <Input maxLength={40} placeholder={DEFAULT_BRAND.appName} />
@@ -140,9 +152,9 @@ export default function SettingsPage() {
             </Button>
             <Button
               icon={<UndoOutlined />}
-              disabled={!custom.hospitalName && !custom.appName && !custom.companyName}
+              disabled={!(demo && custom.hospitalName) && !custom.appName && !custom.companyName}
               onClick={() =>
-                reset(['hospitalName', 'appName', 'companyName']).then(
+                reset(demo ? ['hospitalName', 'appName', 'companyName'] : ['appName', 'companyName']).then(
                   () => message.success('กลับไปใช้ชื่อเริ่มต้นแล้ว'),
                   (e: Error) => message.error(e.message),
                 )

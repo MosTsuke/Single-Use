@@ -4,6 +4,8 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  // ไม่ได้ตั้ง DB_SERVER = โหมดทดสอบ (เก็บข้อมูลในเบราว์เซอร์) ไม่มีอะไรต้องทำที่เซิร์ฟเวอร์
+  if (!process.env.DB_SERVER) return;
   const { getPool, dbErrorMessage } = await import('./server/db');
   const { startAutoBackup } = await import('./server/backup');
   getPool()
