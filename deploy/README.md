@@ -19,6 +19,7 @@
 | `1-start.bat` … `4-update.bat`, `stop.bat`, `uninstall.bat`, `scripts/` | `deploy/windows/` | เปิด / ตั้งเปิดเองตอนบูต (Task Scheduler) / เปิด firewall เฉพาะวงแลน / อัปเดต / หยุด / ถอน |
 | `singleuse.env.example` | `deploy/windows/` | แม่แบบค่าการเชื่อมต่อฐานข้อมูล (ที่หน้างานกลายเป็น `singleuse.env`) |
 | `client/` | `deploy/windows/client/` | สำหรับเครื่องที่ต่อเครื่องพิมพ์: ล็อกเครื่องพิมพ์ใน Chrome + ทางลัดเปิดแบบพิมพ์ทันที |
+| `0-INSTALL-HOST-TH.txt` | `deploy/windows/0-INSTALL-HOST-TH.txt` | **ขั้นตอนสั้นสำหรับฝ่าย IT** ติดตั้งเครื่องแม่ครั้งแรก (zip อยู่ที่ Desktop) มีช่องให้จดค่า |
 | `README-TH.txt` | `deploy/windows/README-TH.txt` | **คู่มือติดตั้งทีละขั้น** ตั้งแต่สร้างฐานข้อมูลจนพร้อมใช้ |
 
 สคริปต์ไม่ยอมใส่ไฟล์ส่วนตัว (`.env.local`, `singleuse.env`, `.bak`) ลงในชุด
