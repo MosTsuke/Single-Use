@@ -47,6 +47,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DisposeModal from '@/components/DisposeModal';
+import LabelSizePicker from '@/components/LabelSizePicker';
 import RegisterUnitModal from '@/components/RegisterUnitModal';
 import PrinterSettingsModal from '@/components/PrinterSettingsModal';
 import ReprintModal from '@/components/ReprintModal';
@@ -55,6 +56,7 @@ import { CycleBar, StatusTag } from '@/components/UnitBits';
 import UnitHistory from '@/components/UnitHistory';
 import { beep } from '@/lib/beep';
 import { dayjs, ISO_DATE, THAI_DATE, thaiDate, todayISO } from '@/lib/date';
+import { LABEL_SIZES, previewNote } from '@/lib/label-size';
 import { usePrinterSettings, usePrintStickers } from '@/lib/print';
 import { useStore, type UnitInfo } from '@/lib/store';
 import { CODE_TYPE_LABEL, type CodeType, type PrintLog, type StickerData, type Unit } from '@/lib/types';
@@ -114,7 +116,7 @@ function SterilizeStation() {
   // หน่วยงานล่าสุดที่เลือก → ใช้เป็นค่าเริ่มต้นของดวงถัดไปที่ยิงเข้ามา (เปลี่ยนรายดวงได้)
   const lastDeptId = useRef<number | undefined>(undefined);
   const printStickers = usePrintStickers();
-  const { settings: printer } = usePrinterSettings();
+  const { settings: printer, labelSize } = usePrinterSettings();
   const { message } = App.useApp();
   const params = useSearchParams();
   const scanRef = useRef<RefSelectProps>(null);
@@ -446,6 +448,13 @@ function SterilizeStation() {
               )}
               {rows.length > 0 && (
                 <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+                  {/* ขนาดตามม้วนที่ใส่ในเครื่องพิมพ์ตอนนี้ — ใช้กับทุกดวงในรอบนี้ */}
+                  <Flex align="center" gap={8} wrap style={{ marginBottom: 12 }}>
+                    <Text strong style={{ whiteSpace: 'nowrap' }}>
+                      <PrinterOutlined /> ขนาดสติ๊กเกอร์
+                    </Text>
+                    <LabelSizePicker />
+                  </Flex>
                   <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
                     <Text strong style={{ whiteSpace: 'nowrap' }}>
                       <UserOutlined /> เจ้าหน้าที่ผู้พิมพ์ <Text type="danger">*</Text>
@@ -484,7 +493,8 @@ function SterilizeStation() {
                   </Button>
                   {printer.printerName && (
                     <Text type="secondary" style={{ display: 'block', marginTop: 8, textAlign: 'center' }}>
-                      <PrinterOutlined /> พิมพ์ออกที่เครื่อง <Text strong>{printer.printerName}</Text> · 50 × 25 มม.
+                      <PrinterOutlined /> พิมพ์ออกที่เครื่อง <Text strong>{printer.printerName}</Text> ·{' '}
+                      {LABEL_SIZES[labelSize].text} ขอบ{LABEL_SIZES[labelSize].color}
                     </Text>
                   )}
                   {!currentStaff && ready.length > 0 && (
@@ -607,9 +617,9 @@ function SterilizeStation() {
                 </Flex>
               )}
               <div className="sticker-preview-wrap">
-                <div className="sticker-preview">
+                <div className={`sticker-preview${labelSize === '50x48' ? ' lg' : ''}`}>
                   {preview ? (
-                    <Sticker data={preview} />
+                    <Sticker data={preview} size={labelSize} />
                   ) : (
                     <Flex
                       vertical
@@ -633,7 +643,7 @@ function SterilizeStation() {
               <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginTop: 10, fontSize: 12 }}>
                 {focusRow && focusRow.state !== 'ok' && preview
                   ? 'แสดงดวงล่าสุดที่เคยพิมพ์ — ชิ้นนี้พิมพ์รอบใหม่ไม่ได้'
-                  : 'ขนาดจริง 5.0 × 2.5 ซม. · กรอบสีส้มเป็นของม้วนสติ๊กเกอร์ ไม่ได้พิมพ์ออกไป'}
+                  : previewNote(labelSize)}
               </Text>
               {focusCode === 'qr' && (
                 <Alert

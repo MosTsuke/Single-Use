@@ -6,6 +6,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { thaiDate, thaiDateTime } from '@/lib/date';
 import { usePrinterSettings, usePrintStickers } from '@/lib/print';
+import LabelSizePicker from '@/components/LabelSizePicker';
 import { useStore } from '@/lib/store';
 import Sticker from '@/components/Sticker';
 import type { CodeType, PrintLog } from '@/lib/types';
@@ -20,7 +21,7 @@ interface Props {
 export default function ReprintModal({ open, onClose, itemId }: Props) {
   const { logs, units, items, createReprint, removeLogs } = useStore();
   const printStickers = usePrintStickers();
-  const { settings: printer } = usePrinterSettings();
+  const { settings: printer, labelSize } = usePrinterSettings();
   const { message } = App.useApp();
   const [q, setQ] = useState('');
   const [confirming, setConfirming] = useState<PrintLog | null>(null);
@@ -201,10 +202,14 @@ export default function ReprintModal({ open, onClose, itemId }: Props) {
               {confirming.maxRound} อีก 1 ดวง โดยใช้ SN และวันที่เดิม (ไม่นับรอบเพิ่ม)
             </Typography.Paragraph>
             <div className="sticker-preview-wrap" style={{ padding: '20px 8px' }}>
-              <div className="sticker-preview">
-                <Sticker data={previewData!} />
+              <div className={`sticker-preview${labelSize === '50x48' ? ' lg' : ''}`}>
+                <Sticker data={previewData!} size={labelSize} />
               </div>
             </div>
+            {/* ขนาดตามม้วนที่ใส่อยู่ — ค่าเดียวกับหน้าพิมพ์ */}
+            <Flex justify="center" style={{ marginTop: 12 }}>
+              <LabelSizePicker />
+            </Flex>
             <Flex justify="space-between" align="center" style={{ marginTop: 12 }}>
               <Segmented<CodeType>
                 value={codeType}

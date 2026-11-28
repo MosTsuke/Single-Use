@@ -4,13 +4,15 @@ import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { thaiDate } from "@/lib/date";
+import { DEFAULT_LABEL_SIZE, type LabelSize } from "@/lib/label-size";
 import { codeOf, type StickerData } from "@/lib/types";
 
 /**
- * สติ๊กเกอร์ขนาดจริง 50 x 25 มม. — ใช้ทั้งตัวอย่างบนจอและตอนสั่งพิมพ์
- * กรอบสีส้มพิมพ์มาจากโรงงานบนม้วนสติ๊กเกอร์แล้ว จึงพิมพ์เฉพาะเนื้อหาสีดำด้านใน
+ * สติ๊กเกอร์ขนาดจริง — ใช้ทั้งตัวอย่างบนจอและตอนสั่งพิมพ์
+ *   50 x 25 มม. ขอบส้ม (เดิม) · 50 x 48 มม. ขอบเขียว (`st-lg` เนื้อหาเดิม ตัวใหญ่ขึ้น)
+ * กรอบสีพิมพ์มาจากโรงงานบนม้วนสติ๊กเกอร์แล้ว จึงพิมพ์เฉพาะเนื้อหาสีดำด้านใน
  *
- * 3 แบบ: บาร์โคด (ด้านบน) / QR (ด้านซ้าย) / ไม่มีรหัส (แสดง SN เป็นตัวหนังสือ)
+ * 3 แบบ: บาร์โคด (ด้านบน) / QR (ด้านขวา) / ไม่มีรหัส (แสดง SN เป็นตัวหนังสือ)
  */
 /** ความกว้าง 1 module ของบาร์โคด (มม.) — 2 จุดของหัวพิมพ์ 203 dpi */
 const BARCODE_MODULE_MM = 0.25;
@@ -20,18 +22,20 @@ const BARCODE_MAX_MM = 44;
 const DOTS_PER_MM = 8;
 /** ขนาด QR สูงสุด (มม.) รวมขอบเว้นว่าง — เหลือที่ด้านล่างให้คำว่า "รอบ" */
 const QR_MAX_MM = 15;
+/** ดวงใหญ่ 50 x 48: QR มุมขวาบน ข้าง ๆ ชื่อ (บรรทัดวันที่/รอบอยู่ด้านล่างเต็มความกว้าง) */
+const QR_MAX_MM_LG = 24;
 /** ขอบเว้นว่างรอบ QR (หน่วย module) — มาตรฐานคือ 4 แต่สติ๊กเกอร์เล็ก ใช้ 2 ร่วมกับขอบสติ๊กเกอร์ */
 const QR_QUIET = 2;
 
 /** แปลง SN เป็นจุดของ QR — ขนาด 1 module เป็นจำนวนจุดเต็มของหัวพิมพ์ เพื่อให้คมและยิงง่าย */
-function useQr(text: string, enabled: boolean) {
+function useQr(text: string, enabled: boolean, maxMm: number) {
   return useMemo(() => {
     if (!enabled) return null;
     try {
       const qr = QRCode.create(text || "0", { errorCorrectionLevel: "M" });
       const n = qr.modules.size;
       const total = n + QR_QUIET * 2;
-      const dots = Math.max(2, Math.floor((QR_MAX_MM * DOTS_PER_MM) / total));
+      const dots = Math.max(2, Math.floor((maxMm * DOTS_PER_MM) / total));
       let d = "";
       for (let r = 0; r < n; r++)
         for (let c = 0; c < n; c++)
@@ -41,21 +45,25 @@ function useQr(text: string, enabled: boolean) {
     } catch {
       return null;
     }
-  }, [text, enabled]);
+  }, [text, enabled, maxMm]);
 }
 
 export default function Sticker({
   data,
+  size = DEFAULT_LABEL_SIZE,
   onReady,
 }: {
   data: StickerData;
+  size?: LabelSize;
   onReady?: () => void;
 }) {
   const code = codeOf(data);
+  const lg = size === "50x48";
   const svgRef = useRef<SVGSVGElement>(null);
   const nameRef = useRef<HTMLDivElement>(null);
   const [barcodeError, setBarcodeError] = useState(false);
-  const qr = useQr(data.barcode, code === "qr");
+  const qrMaxMm = lg ? QR_MAX_MM_LG : QR_MAX_MM;
+  const qr = useQr(data.barcode, code === "qr", qrMaxMm);
 
   useLayoutEffect(() => {
     // 1) วาดบาร์โคด
@@ -87,19 +95,21 @@ export default function Sticker({
     }
     setBarcodeError(err);
 
-    // 2) ชื่ออุปกรณ์: ไม่เกิน 2 บรรทัด (เกินตัดด้วย … ผ่าน CSS line-clamp)
-    //    ชื่อสั้นใช้ขนาดเต็มบรรทัดเดียว · ชื่อยาวย่อตัวอักษรลงจน 2 บรรทัดพอดีพื้นที่ที่เหลือ
-    //    ถ้าย่อถึงขนาดเล็กสุดแล้วยังไม่พอ 2 บรรทัด → เหลือ 1 บรรทัด + …
+    // 2) ชื่ออุปกรณ์: ไม่เกิน 2 บรรทัด (ดวงใหญ่แบบ QR 3 บรรทัด — ตั้งใน CSS line-clamp) เกินตัดด้วย …
+    //    ชื่อสั้นใช้ขนาดเต็มบรรทัดเดียว · ชื่อยาวย่อตัวอักษรลงจนพอดีพื้นที่ที่เหลือ
+    //    ถ้าย่อถึงขนาดเล็กสุดแล้วยังไม่พอ → ลดจำนวนบรรทัดลง + …
     const fitName = () => {
       const el = nameRef.current;
       if (el) {
         el.style.fontSize = "";
         el.style.webkitLineClamp = "";
+        // จำนวนบรรทัดสูงสุดตาม CSS ของแบบนั้น ๆ
+        let maxLines = parseInt(getComputedStyle(el).webkitLineClamp) || 2;
         const MIN_PX = 7.5; // ≈ 2 มม. — เล็กกว่านี้พิมพ์ที่ 203 dpi แล้วอ่านยาก
         let size = parseFloat(getComputedStyle(el).fontSize);
         const lineH = () =>
           parseFloat(getComputedStyle(el).lineHeight) || size * 1.35;
-        // จำนวนบรรทัดจริงของชื่อ (วัดตอนปลด line-clamp ชั่วคราว) → ต้องการพื้นที่ min(บรรทัด, 2) บรรทัด
+        // จำนวนบรรทัดจริงของชื่อ (วัดตอนปลด line-clamp ชั่วคราว) → ต้องการพื้นที่ min(บรรทัด, สูงสุด) บรรทัด
         const lines = () => {
           const d = el.style.display;
           const c = el.style.webkitLineClamp;
@@ -110,7 +120,7 @@ export default function Sticker({
           el.style.webkitLineClamp = c;
           return n;
         };
-        const need = () => Math.min(2, lines()) * lineH();
+        const need = () => Math.min(maxLines, lines()) * lineH();
         let guard = 0;
         while (
           need() > el.clientHeight + 0.5 &&
@@ -119,6 +129,15 @@ export default function Sticker({
         ) {
           size = Math.max(MIN_PX, size - 0.25);
           el.style.fontSize = `${size}px`;
+        }
+        // ดวงใหญ่มีที่พอ: ชื่อยังยาวเกินจำนวนบรรทัด → ย่อต่อให้เห็นชื่อเต็ม แต่ไม่เล็กกว่า 3 มม. (ดวงเล็กตัด … ตามเดิม)
+        if (lg) {
+          const LG_MIN_PX = (3 * 96) / 25.4;
+          guard = 0;
+          while (lines() > maxLines && size > LG_MIN_PX && guard++ < 120) {
+            size = Math.max(LG_MIN_PX, size - 0.25);
+            el.style.fontSize = `${size}px`;
+          }
         }
         // แบบบาร์โคด: ยังไม่พอ → ลดความสูงแท่งบาร์โคดลงได้ถึง 3.6 มม. (ความกว้างแท่งไม่เปลี่ยน ยังยิงอ่านได้)
         const svg = svgRef.current;
@@ -133,7 +152,10 @@ export default function Sticker({
             svg.style.height = `${h}px`;
           }
         }
-        if (need() > el.clientHeight + 0.5) el.style.webkitLineClamp = "1";
+        while (need() > el.clientHeight + 0.5 && maxLines > 1) {
+          maxLines -= 1;
+          el.style.webkitLineClamp = String(maxLines);
+        }
       }
     };
     fitName();
@@ -147,7 +169,7 @@ export default function Sticker({
       alive = false;
       document.fonts?.removeEventListener?.("loadingdone", refit);
     };
-  }, [data, code, onReady]);
+  }, [data, code, size, onReady]);
 
   // บรรทัด "ใช้ที่ ..." — มีหน่วยงานและไม่ได้ปิดไว้ → สติ๊กเกอร์ใช้โหมด 4 บรรทัด (ตัวอักษรเล็กลงเล็กน้อย)
   const showDept = !!data.departmentName && data.showDept !== false;
@@ -172,8 +194,8 @@ export default function Sticker({
           จนท. <b>{data.staffName || "—"}</b>
         </div>
       )}
-      {/* แบบ QR: "ใช้ที่" แยกไปเป็นบรรทัดเต็มความกว้างด้านล่าง (ไม่อยู่ในคอลัมน์แคบด้านขวา) */}
-      {showDept && code !== "qr" && (
+      {/* แบบ QR ดวงเล็ก: "ใช้ที่" แยกไปเป็นบรรทัดเต็มความกว้างด้านล่าง (ไม่อยู่ในคอลัมน์แคบ) */}
+      {showDept && (code !== "qr" || lg) && (
         <div className={`st-staff st-dept${deptIdx < 2 ? " st-staff-up" : ""}`}>
           ใช้ที่ <b>{data.departmentName}</b>
         </div>
@@ -181,8 +203,12 @@ export default function Sticker({
     </div>
   );
   const round = (
+    // ดวงเล็ก "รอบ 3/4" บรรทัดเดียว · ดวงใหญ่ "รอบ" อยู่บน ตัวเลขใหญ่อยู่ล่าง (CSS .st-lg)
     <div className="st-round">
-      รอบ {data.round}/{data.maxRound}
+      <span className="st-round-label">รอบ </span>
+      <span className="st-round-num">
+        {data.round}/{data.maxRound}
+      </span>
     </div>
   );
 
@@ -202,12 +228,12 @@ export default function Sticker({
         ) : (
           <div
             className="st-code st-error"
-            style={{ width: `${QR_MAX_MM}mm`, height: `${QR_MAX_MM}mm` }}
+            style={{ width: `${qrMaxMm}mm`, height: `${qrMaxMm}mm` }}
           >
             QR ไม่ถูกต้อง
           </div>
         )}
-        {round}
+        {!lg && round}
       </div>
     );
     const main = (
@@ -219,6 +245,26 @@ export default function Sticker({
         <div className="st-info">{lines}</div>
       </div>
     );
+    if (lg) {
+      // ดวงใหญ่: ชื่อ + SN ข้าง QR ด้านบน / วันที่ จนท. ใช้ที่ + "รอบ" ด้านล่างเต็มความกว้าง (แบบเดียวกับบาร์โคด)
+      return (
+        <div className={`sticker st-lg st-qr-lg${showDept ? " st-dept-mode" : ""}`}>
+          <div className="st-qr-top">
+            {qrCol}
+            <div className="st-qr-main">
+              <div ref={nameRef} className="st-name">
+                {data.name}
+              </div>
+              {data.barcode && <div className="st-sn">{data.barcode}</div>}
+            </div>
+          </div>
+          <div className="st-info">
+            {lines}
+            {round}
+          </div>
+        </div>
+      );
+    }
     if (showDept) {
       // มี "ใช้ที่": QR + ข้อความด้านบน / บรรทัด "ใช้ที่ ..." เต็มความกว้างด้านล่าง
       return (
@@ -243,7 +289,7 @@ export default function Sticker({
 
   return (
     <div
-      className={`sticker${code === "barcode" ? "" : " no-barcode"}${showDept ? " st-dept-mode" : ""}`}
+      className={`sticker${lg ? " st-lg" : ""}${code === "barcode" ? "" : " no-barcode"}${showDept ? " st-dept-mode" : ""}`}
     >
       {code === "barcode" &&
         (barcodeError ? (

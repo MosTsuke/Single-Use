@@ -4,6 +4,7 @@ import { PrinterOutlined, UndoOutlined } from '@ant-design/icons';
 import { Alert, Button, Col, Divider, Flex, Input, InputNumber, Modal, Row, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { addDays, todayISO } from '@/lib/date';
+import LabelSizePicker from '@/components/LabelSizePicker';
 import { usePrinterSettings, usePrintStickers, type PrinterSettings } from '@/lib/print';
 
 const { Text, Paragraph } = Typography;
@@ -101,7 +102,7 @@ export default function PrinterSettingsModal({ open, onClose }: { open: boolean;
         description={
           <ol style={{ paddingLeft: 18, margin: '4px 0 0' }}>
             <li>ติดตั้งไดรเวอร์ GoDEX ของรุ่น EZ120 และตั้งชื่อเครื่องให้ตรงกับช่องด้านล่าง</li>
-            <li>ในไดรเวอร์ ตั้งกระดาษ 50 × 25 มม. ชนิดสติ๊กเกอร์มีช่องว่าง (gap)</li>
+            <li>ในไดรเวอร์ ตั้งกระดาษให้ตรงม้วนที่ใส่ (50 × 25 มม. ขอบส้ม / 50 × 48 มม. ขอบเขียว) ชนิดสติ๊กเกอร์มีช่องว่าง (gap)</li>
             <li>ทำ calibrate เซนเซอร์กระดาษตามคู่มือเครื่อง ทุกครั้งที่เปลี่ยนม้วน</li>
             <li>หน้าต่างพิมพ์ของ Chrome: เลือก {draft.printerName || 'EZ120'} · Margins = None · Scale = 100%</li>
           </ol>
@@ -125,8 +126,12 @@ export default function PrinterSettingsModal({ open, onClose }: { open: boolean;
 
       <Paragraph style={{ marginBottom: 8 }}>
         <Text strong>ปรับตำแหน่งการพิมพ์</Text>{' '}
-        <Text type="secondary">— ถ้าข้อความไม่อยู่กลางกรอบสีส้ม ให้พิมพ์ทดสอบแล้วขยับทีละ 0.5 มม.</Text>
+        <Text type="secondary">— ถ้าข้อความไม่อยู่กลางกรอบสี ให้พิมพ์ทดสอบแล้วขยับทีละ 0.5 มม.</Text>
       </Paragraph>
+      <Flex align="center" gap={8} wrap style={{ marginBottom: 12 }}>
+        <Text>ขนาดดวงทดสอบ</Text>
+        <LabelSizePicker size="small" />
+      </Flex>
       <Row gutter={16}>
         {num('offsetX', 'เลื่อนแนวนอน', 'ลบ = ไปซ้าย · บวก = ไปขวา')}
         {num('offsetY', 'เลื่อนแนวตั้ง', 'ลบ = ขึ้น · บวก = ลง')}

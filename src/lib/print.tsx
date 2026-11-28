@@ -5,6 +5,7 @@ import { UndoOutlined } from '@ant-design/icons';
 import { App, Button } from 'antd';
 import { createPortal } from 'react-dom';
 import Sticker from '@/components/Sticker';
+import { DEFAULT_LABEL_SIZE, LABEL_SIZES, type LabelSize } from './label-size';
 import type { StickerData } from './types';
 
 /**
@@ -38,20 +39,29 @@ const DEFAULT_SETTINGS: PrinterSettings = { offsetX: 0, offsetY: 0, printerName:
 const SettingsContext = createContext<{
   settings: PrinterSettings;
   setSettings: (s: PrinterSettings) => void;
+  /** ขนาดสติ๊กเกอร์ตามม้วนที่ใส่อยู่ — ใช้ร่วมกันทุกจุดที่สั่งพิมพ์ ไม่จำข้ามการเปิดโปรแกรม */
+  labelSize: LabelSize;
+  setLabelSize: (s: LabelSize) => void;
 } | null>(null);
 
 /**
  * วาดสติ๊กเกอร์ลงพื้นที่ซ่อน (#print-area) แล้วเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
- * CSS @page กำหนดขนาดกระดาษ 50 x 25 มม. ไว้ใน globals.css
+ * ขนาดกระดาษ (CSS @page) ตามขนาดสติ๊กเกอร์ที่เลือก ณ ตอนสั่งพิมพ์ — 50 × 25 หรือ 50 × 48 มม.
  */
 export function PrintProvider({ children }: { children: ReactNode }) {
-  const [job, setJob] = useState<{ id: number; list: StickerData[] } | null>(null);
+  const [job, setJob] = useState<{ id: number; list: StickerData[]; size: LabelSize } | null>(null);
   const [mounted, setMounted] = useState(false);
   const pending = useRef(0);
   const { notification } = App.useApp();
   // งานพิมพ์ที่กำลังเปิดหน้าต่างพิมพ์อยู่ (กันสั่งซ้อน)
   const active = useRef<{ resolve: () => void; undo?: PrintOptions['undo'] } | null>(null);
   const [settings, setSettingsState] = useState<PrinterSettings>(DEFAULT_SETTINGS);
+  const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL_SIZE);
+  // print() คงที่ (ไม่สร้างใหม่) → อ่านขนาดล่าสุดผ่าน ref
+  const sizeRef = useRef(labelSize);
+  useEffect(() => {
+    sizeRef.current = labelSize;
+  }, [labelSize]);
 
   useEffect(() => {
     setMounted(true);
@@ -77,7 +87,7 @@ export function PrintProvider({ children }: { children: ReactNode }) {
     return new Promise<void>((resolve) => {
       active.current = { resolve, undo: opts?.undo };
       pending.current = list.length;
-      setJob({ id: Date.now(), list });
+      setJob({ id: Date.now(), list, size: sizeRef.current });
     });
   }, []);
 
@@ -131,25 +141,34 @@ export function PrintProvider({ children }: { children: ReactNode }) {
 
   return (
     <PrintContext.Provider value={print}>
-      <SettingsContext.Provider value={{ settings, setSettings }}>{children}</SettingsContext.Provider>
+      <SettingsContext.Provider value={{ settings, setSettings, labelSize, setLabelSize }}>{children}</SettingsContext.Provider>
       {mounted &&
         createPortal(
-          <div
-            id="print-area"
-            aria-hidden
-            style={
-              {
-                '--print-offset-x': `${settings.offsetX}mm`,
-                '--print-offset-y': `${settings.offsetY}mm`,
-              } as CSSProperties
-            }
-          >
-            {job?.list.map((d, i) => <Sticker key={`${job.id}-${i}`} data={d} onReady={onStickerReady} />)}
-          </div>,
+          <>
+            {/* ขนาดกระดาษของงานพิมพ์นี้ — มี @page ได้ที่เดียว (ไม่มีใน globals.css) */}
+            <style>{pageCss(job?.size ?? labelSize)}</style>
+            <div
+              id="print-area"
+              aria-hidden
+              style={
+                {
+                  '--print-offset-x': `${settings.offsetX}mm`,
+                  '--print-offset-y': `${settings.offsetY}mm`,
+                } as CSSProperties
+              }
+            >
+              {job?.list.map((d, i) => <Sticker key={`${job.id}-${i}`} data={d} size={job.size} onReady={onStickerReady} />)}
+            </div>
+          </>,
           document.body,
         )}
     </PrintContext.Provider>
   );
+}
+
+function pageCss(size: LabelSize) {
+  const s = LABEL_SIZES[size];
+  return `@media print { @page { size: ${s.w}mm ${s.h}mm; margin: 0; } }`;
 }
 
 export function usePrintStickers(): PrintFn {

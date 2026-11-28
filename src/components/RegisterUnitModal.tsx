@@ -4,6 +4,7 @@ import { BarcodeOutlined, NumberOutlined, PlusCircleOutlined, SwapOutlined } fro
 import { Alert, App, Checkbox, Col, Flex, Form, Input, InputNumber, Modal, Radio, Row, Select, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { addDays, todayISO } from '@/lib/date';
+import LabelSizePicker from '@/components/LabelSizePicker';
 import { usePrintStickers } from '@/lib/print';
 import { useStore } from '@/lib/store';
 import type { PrintLog, Unit } from '@/lib/types';
@@ -223,6 +224,12 @@ export default function RegisterUnitModal({ open, onClose, defaultSn, defaultIte
                 .map((s) => ({ value: s.id, label: s.code ? `${s.name} (${s.code})` : s.name, search: `${s.name} ${s.code ?? ''}` }))}
             />
           </Form.Item>
+        )}
+        {printNow && (
+          <Flex align="center" gap={8} wrap style={{ marginTop: 12 }}>
+            <Typography.Text>ขนาดสติ๊กเกอร์</Typography.Text>
+            <LabelSizePicker size="small" />
+          </Flex>
         )}
       </Form>
     </Modal>
