@@ -9,7 +9,7 @@
 ./scripts/package-windows.sh
 ```
 
-ได้ไฟล์ `dist/singleuse-sticker-windows-<วันที่>-<commit>.zip` (~50 MB) ข้างในมี
+ได้ไฟล์ `dist/singleuse-sticker_<วันที่>-<เวลา>.zip` (~50 MB · เลข commit อยู่ใน `VERSION.txt`) ข้างในมี
 
 | ในชุด | มาจาก | ใช้ทำอะไร |
 |---|---|---|

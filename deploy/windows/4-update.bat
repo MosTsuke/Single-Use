@@ -1,7 +1,7 @@
 @echo off
 setlocal
 REM Right-click > Run as administrator, after putting the new
-REM singleuse-sticker-windows-*.zip (as it came, not unpacked) in this folder.
+REM singleuse-sticker*.zip (as it came, not unpacked) in this folder.
 REM Stops the program, puts the new version in, starts it again and
 REM deletes the zip; singleuse.env and logs\ stay. The work is done by
 REM scripts\update.ps1.
@@ -36,10 +36,10 @@ REM is read whole before it runs. (No ")" in the messages below.)
     echo [อัปเดตไม่สำเร็จ] หยุดโปรแกรมไม่ได้ ยังไม่ได้เปลี่ยนอะไร ลองรีสตาร์ทเครื่องแล้วทำใหม่
   ) else if errorlevel 3 (
     echo.
-    echo [ไฟล์ zip ไม่ถูกต้อง] ต้องเป็นไฟล์ singleuse-sticker-windows-....zip ตามที่ได้มา ไม่ต้องแตก
+    echo [ไฟล์ zip ไม่ถูกต้อง] ต้องเป็นไฟล์ singleuse-sticker_....zip ตามที่ได้มา ไม่ต้องแตก
   ) else if errorlevel 2 (
     echo.
-    echo [ไม่พบไฟล์อัปเดต] วางไฟล์ singleuse-sticker-windows-....zip รุ่นใหม่ไว้ในโฟลเดอร์นี้ 1 ไฟล์ แล้วทำใหม่
+    echo [ไม่พบไฟล์อัปเดต] วางไฟล์ singleuse-sticker_....zip รุ่นใหม่ไว้ในโฟลเดอร์นี้ 1 ไฟล์ แล้วทำใหม่
   ) else if errorlevel 1 (
     echo.
     echo [อัปเดตไม่สำเร็จ] ดูข้อความด้านบน

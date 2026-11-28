@@ -18,7 +18,7 @@
 ./scripts/package-windows.sh
 ```
 
-ได้ `dist/singleuse-sticker-windows-<วันที่>-<commit>.zip` แล้วทำตาม `README-TH.txt` ในชุด
+ได้ `dist/singleuse-sticker_<วันที่>-<เวลา>.zip` (เลข commit อยู่ใน `VERSION.txt` ข้างใน) แล้วทำตาม `README-TH.txt` ในชุด
 (ตั้งแต่สร้างฐานข้อมูลจนพร้อมใช้ — ต้นฉบับอยู่ที่ [`deploy/windows/README-TH.txt`](deploy/windows/README-TH.txt), สรุปใน [`deploy/README.md`](deploy/README.md))
 
 ## พัฒนาในเครื่อง

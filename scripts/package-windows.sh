@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # สร้างชุดติดตั้งสำหรับเครื่องแม่ (Windows 64-bit) ที่หน้างาน — ไม่ต้องใช้อินเทอร์เน็ตที่หน้างาน:
-#   dist/singleuse-sticker-windows-<date>-<commit>.zip
+#   dist/singleuse-sticker_<yyyymmdd>-<hhmm>.zip   (เลข commit อยู่ใน VERSION.txt ข้างใน — แบบเดียวกับ med_dashboard)
 # ข้างในมี: เว็บที่ build แล้ว (Next.js standalone ไม่ต้อง npm ที่หน้างาน), node.exe สำหรับ Windows x64,
 # สคริปต์เปิด/ตั้งเปิดเอง/เปิด firewall/อัปเดต/หยุด/ถอน (deploy/windows/), สคริปต์ฐานข้อมูล (database/)
 # และคู่มือ README-TH.txt — ต้องมีอินเทอร์เน็ตที่เครื่องนี้ (npm ci, nodejs.org)
@@ -19,8 +19,8 @@ CACHE="$DIST/cache"
 COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
 DIRTY=""
 [ -n "$(git -C "$ROOT" status --porcelain)" ] && DIRTY=" + uncommitted changes"
-STAMP="$(date +%Y%m%d)"
-OUT="$DIST/singleuse-sticker-windows-$STAMP-$COMMIT.zip"
+STAMP="$(date +%Y%m%d-%H%M)"
+OUT="$DIST/singleuse-sticker_$STAMP.zip"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

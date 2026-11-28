@@ -1,5 +1,5 @@
 # Puts a new Single-Use Sticker bundle in place of the installed one. Called by
-# 4-update.bat (as administrator) once the new singleuse-sticker-windows-*.zip
+# 4-update.bat (as administrator) once the new singleuse-sticker*.zip
 # has been dropped, still zipped, into the install folder:
 #   1. unpack it into _update\ and check it is a Single-Use Sticker bundle
 #   2. stop the program (the SingleUseSticker task and our own node.exe)
@@ -123,9 +123,11 @@ foreach ($d in $swapped) {
 }
 
 # 1. Find and unpack the bundle.
-$zips = @(Get-ChildItem -LiteralPath $Root -Filter 'singleuse-sticker-windows-*.zip' -File)
+# singleuse-sticker_<date>-<time>.zip; older bundles were named
+# singleuse-sticker-windows-<date>-<commit>.zip, and either still works.
+$zips = @(Get-ChildItem -LiteralPath $Root -Filter 'singleuse-sticker*.zip' -File)
 if ($zips.Count -eq 0) {
-  Say "No singleuse-sticker-windows-*.zip in $Root"
+  Say "No singleuse-sticker*.zip in $Root"
   exit 2
 }
 if ($zips.Count -gt 1) {

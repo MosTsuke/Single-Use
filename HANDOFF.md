@@ -21,7 +21,7 @@
 | Repo | GitHub `MosTsuke/Single-Use` (เจ้าของ push เอง) |
 | ใช้งานจริง | **เครื่องแม่ 1 เครื่อง** (Windows) ในแลนโรงพยาบาล ไม่มีอินเทอร์เน็ต — รัน `node.exe app\server.js` port 3002 เครื่องอื่นเปิดผ่าน `http://<IP>:3002` |
 | ข้อมูล | Microsoft SQL Server ที่มีอยู่แล้วบนเครื่องแม่ (หน้างานใช้ SSMS 18 / SQL Server 2019) — **ฐานใหม่ `SingleUseSticker` แยกจากฐานเดิม** login `singleuse_app` สิทธิ์เฉพาะฐานนี้ |
-| ชุดติดตั้ง | `./scripts/package-windows.sh` → `dist/singleuse-sticker-windows-*.zip` (แบบเดียวกับ med_dashboard) คู่มือ `deploy/windows/README-TH.txt` |
+| ชุดติดตั้ง | `./scripts/package-windows.sh` → `dist/singleuse-sticker_<yyyymmdd>-<hhmm>.zip` (แบบเดียวกับ med_dashboard · commit อยู่ใน VERSION.txt) คู่มือ `deploy/windows/README-TH.txt` |
 | ระบบทดสอบ (Vercel) | **โหมดทดสอบ** — ไม่ตั้ง `DB_SERVER` แล้วทำงานเหมือนรุ่นแรกทุกอย่าง: เก็บในเบราว์เซอร์ มีโหลดข้อมูลตัวอย่าง / นำเข้า / admin admin1234 (เจ้าของต้องการให้คงไว้) |
 | สองโหมด | `/api/mode` ตอบ `db` (มี `DB_SERVER`) หรือ `demo` → `ModeProvider` เลือก store/auth/brand ที่ใช้ — โค้ดหน้าเว็บเดียวกัน |
 
